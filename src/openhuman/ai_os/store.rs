@@ -20,7 +20,8 @@ pub fn ensure_tables(conn: &Connection) -> rusqlite::Result<()> {
              default_model TEXT NOT NULL,
              enabled       INTEGER NOT NULL DEFAULT 1,
              created_at    INTEGER NOT NULL,
-             updated_at    INTEGER NOT NULL
+             updated_at    INTEGER NOT NULL,
+             vps_url       TEXT
          );
 
          CREATE TABLE IF NOT EXISTS ai_os_conversations (
@@ -58,8 +59,9 @@ pub fn provider_upsert(conn: &Connection, p: &UserProvider) -> rusqlite::Result<
     let kind = kind.trim_matches('"').to_string();
     conn.execute(
         "INSERT INTO ai_os_providers
-             (id, name, kind, base_url, api_key, default_model, enabled, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+             (id, name, kind, base_url, api_key, default_model, enabled, created_at, updated_at,
+              vps_url)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
          ON CONFLICT(id) DO UPDATE SET
              name          = excluded.name,
              kind          = excluded.kind,
@@ -67,7 +69,8 @@ pub fn provider_upsert(conn: &Connection, p: &UserProvider) -> rusqlite::Result<
              api_key       = excluded.api_key,
              default_model = excluded.default_model,
              enabled       = excluded.enabled,
-             updated_at    = excluded.updated_at",
+             updated_at    = excluded.updated_at,
+             vps_url       = excluded.vps_url",
         params![
             p.id,
             p.name,
@@ -78,6 +81,7 @@ pub fn provider_upsert(conn: &Connection, p: &UserProvider) -> rusqlite::Result<
             p.enabled as i64,
             p.created_at,
             p.updated_at,
+            p.vps_url,
         ],
     )?;
     Ok(())
@@ -85,7 +89,8 @@ pub fn provider_upsert(conn: &Connection, p: &UserProvider) -> rusqlite::Result<
 
 pub fn provider_get(conn: &Connection, id: &str) -> rusqlite::Result<Option<UserProvider>> {
     conn.query_row(
-        "SELECT id, name, kind, base_url, api_key, default_model, enabled, created_at, updated_at
+        "SELECT id, name, kind, base_url, api_key, default_model, enabled, created_at, updated_at,
+                vps_url
          FROM ai_os_providers WHERE id = ?1",
         params![id],
         row_to_provider,
@@ -95,7 +100,8 @@ pub fn provider_get(conn: &Connection, id: &str) -> rusqlite::Result<Option<User
 
 pub fn provider_list(conn: &Connection) -> rusqlite::Result<Vec<UserProvider>> {
     let mut stmt = conn.prepare(
-        "SELECT id, name, kind, base_url, api_key, default_model, enabled, created_at, updated_at
+        "SELECT id, name, kind, base_url, api_key, default_model, enabled, created_at, updated_at,
+                vps_url
          FROM ai_os_providers ORDER BY created_at ASC",
     )?;
     let rows = stmt
@@ -119,6 +125,7 @@ fn row_to_provider(row: &rusqlite::Row<'_>) -> rusqlite::Result<UserProvider> {
     let enabled: i64 = row.get(6)?;
     let created_at: i64 = row.get(7)?;
     let updated_at: i64 = row.get(8)?;
+    let vps_url: Option<String> = row.get(9)?;
 
     // Parse kind from stored string (snake_case without quotes)
     let kind = serde_json::from_str(&format!("\"{}\"", kind_str))
@@ -134,6 +141,7 @@ fn row_to_provider(row: &rusqlite::Row<'_>) -> rusqlite::Result<UserProvider> {
         enabled: enabled != 0,
         created_at,
         updated_at,
+        vps_url,
     })
 }
 
@@ -313,6 +321,27 @@ pub fn with_connection<T>(config: &Config, f: impl FnOnce(&Connection) -> Result
         .with_context(|| format!("[ai_os] failed to open DB: {}", db_path.display()))?;
 
     ensure_tables(&conn).with_context(|| "[ai_os] failed to initialize schema")?;
+    migrate_add_vps_url(&conn).with_context(|| "[ai_os] failed to run vps_url migration")?;
 
     f(&conn)
+}
+
+/// Migration: add `vps_url` column to `ai_os_providers` for existing databases.
+///
+/// SQLite does not support `ADD COLUMN IF NOT EXISTS`, so we check the
+/// current schema via `PRAGMA table_info` first and skip the ALTER if the
+/// column is already present.
+fn migrate_add_vps_url(conn: &Connection) -> rusqlite::Result<()> {
+    let column_exists = conn
+        .prepare("PRAGMA table_info(ai_os_providers)")?
+        .query_map([], |row| row.get::<_, String>(1))?
+        .any(|name| name.map(|n| n == "vps_url").unwrap_or(false));
+
+    if !column_exists {
+        tracing::debug!("[ai_os][store] migrating ai_os_providers: adding vps_url column");
+        conn.execute_batch(
+            "ALTER TABLE ai_os_providers ADD COLUMN vps_url TEXT;",
+        )?;
+    }
+    Ok(())
 }

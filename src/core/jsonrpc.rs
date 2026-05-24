@@ -552,6 +552,10 @@ pub fn build_core_http_router(socketio_enabled: bool) -> Router {
         .route("/events", get(events_handler))
         .route("/events/webhooks", get(webhook_events_handler))
         .route("/rpc", post(rpc_handler))
+        .route(
+            "/ai-os/stream",
+            post(crate::openhuman::ai_os::stream::stream_handler),
+        )
         .route("/ws/dictation", get(dictation_ws_handler))
         .route("/auth/telegram", get(telegram_auth_handler))
         .fallback(not_found_handler)

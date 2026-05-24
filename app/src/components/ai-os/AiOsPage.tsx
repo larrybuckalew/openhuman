@@ -7,8 +7,10 @@ import {
   fetchUsage,
   selectActiveConversation,
   selectProviders,
+  selectStreamingContent,
+  selectStreamingConversationId,
   selectUsage,
-  sendMessage,
+  streamMessage,
 } from '../../store/aiOsSlice';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import type { UserProvider } from '../../types/aiOs';
@@ -26,6 +28,8 @@ export const AiOsPage: FC = () => {
   const activeConversationId = useAppSelector(s => s.aiOs.activeConversationId);
   const activeConversation = useAppSelector(selectActiveConversation);
   const sendingMessage = useAppSelector(s => s.aiOs.sendingMessage);
+  const streamingContent = useAppSelector(selectStreamingContent);
+  const streamingConversationId = useAppSelector(selectStreamingConversationId);
   const usage = useAppSelector(selectUsage);
 
   const messages = useAppSelector(s =>

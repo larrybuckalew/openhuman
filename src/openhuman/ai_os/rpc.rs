@@ -93,6 +93,7 @@ pub async fn handle_provider_add(params: Map<String, Value>) -> Result<Value, St
     let api_key = param_str_opt(&params, "api_key")?;
     let default_model = param_str(&params, "default_model")?;
     let enabled = param_bool_opt(&params, "enabled")?.unwrap_or(true);
+    let vps_url = param_str_opt(&params, "vps_url")?;
 
     let now = now_secs();
     let provider = UserProvider {
@@ -105,6 +106,7 @@ pub async fn handle_provider_add(params: Map<String, Value>) -> Result<Value, St
         enabled,
         created_at: now,
         updated_at: now,
+        vps_url,
     };
 
     store::with_connection(&config, |conn| {
@@ -148,6 +150,9 @@ pub async fn handle_provider_update(params: Map<String, Value>) -> Result<Value,
     }
     if let Some(enabled) = param_bool_opt(&params, "enabled")? {
         provider.enabled = enabled;
+    }
+    if let Some(vps_url) = param_str_opt(&params, "vps_url")? {
+        provider.vps_url = Some(vps_url);
     }
     provider.updated_at = now_secs();
 

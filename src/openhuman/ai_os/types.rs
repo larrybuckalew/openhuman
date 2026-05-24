@@ -19,6 +19,9 @@ pub struct UserProvider {
     pub enabled: bool,
     pub created_at: i64,
     pub updated_at: i64,
+    /// Optional secondary / VPS endpoint URL for Hermès/Openclaw dual-endpoint routing.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vps_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

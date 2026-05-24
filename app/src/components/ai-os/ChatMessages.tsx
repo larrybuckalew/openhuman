@@ -5,6 +5,9 @@ import type { AiMessage } from '../../types/aiOs';
 interface ChatMessagesProps {
   messages: AiMessage[];
   sendingMessage: boolean;
+  streamingContent?: string;
+  streamingConversationId?: string | null;
+  activeConversationId?: string | null;
 }
 
 function formatCost(usd: number): string {
@@ -12,14 +15,26 @@ function formatCost(usd: number): string {
   return `$${usd.toFixed(4)}`;
 }
 
-export const ChatMessages: FC<ChatMessagesProps> = ({ messages, sendingMessage }) => {
+export const ChatMessages: FC<ChatMessagesProps> = ({
+  messages,
+  sendingMessage,
+  streamingContent,
+  streamingConversationId,
+  activeConversationId,
+}) => {
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  // Whether this conversation is currently receiving streamed tokens.
+  const isStreaming =
+    streamingConversationId != null &&
+    activeConversationId != null &&
+    streamingConversationId === activeConversationId;
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages.length, sendingMessage]);
+  }, [messages.length, sendingMessage, streamingContent, isStreaming]);
 
-  if (messages.length === 0 && !sendingMessage) {
+  if (messages.length === 0 && !sendingMessage && !isStreaming) {
     return (
       <div className="flex-1 flex items-center justify-center text-stone-400 text-sm">
         Send a message to start the conversation.
@@ -64,7 +79,16 @@ export const ChatMessages: FC<ChatMessagesProps> = ({ messages, sendingMessage }
         </div>
       ))}
 
-      {sendingMessage && (
+      {isStreaming && streamingContent ? (
+        <div className="flex justify-start">
+          <div className="max-w-[75%] flex flex-col gap-1 items-start">
+            <div className="px-4 py-2.5 rounded-2xl rounded-bl-md text-sm leading-relaxed whitespace-pre-wrap bg-white border border-stone-200 text-stone-800 shadow-subtle">
+              {streamingContent}
+              <span className="animate-pulse">|</span>
+            </div>
+          </div>
+        </div>
+      ) : sendingMessage ? (
         <div className="flex justify-start">
           <div className="bg-white border border-stone-200 rounded-2xl rounded-bl-md px-4 py-3 shadow-subtle">
             <div className="flex items-center gap-1.5">
@@ -83,7 +107,7 @@ export const ChatMessages: FC<ChatMessagesProps> = ({ messages, sendingMessage }
             </div>
           </div>
         </div>
-      )}
+      ) : null}
 
       <div ref={bottomRef} />
     </div>

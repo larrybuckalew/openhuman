@@ -8,6 +8,7 @@ export interface UserProvider {
   api_key?: string;
   default_model: string;
   enabled: boolean;
+  vps_url?: string;
   created_at: number;
   updated_at: number;
 }

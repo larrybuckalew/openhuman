@@ -10,6 +10,7 @@
 pub mod chat;
 mod schemas;
 pub mod store;
+pub mod stream;
 pub mod types;
 
 mod rpc;

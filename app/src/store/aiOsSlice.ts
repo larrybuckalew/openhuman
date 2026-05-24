@@ -4,6 +4,7 @@ import debug from 'debug';
 import * as aiOsService from '../services/aiOsService';
 import type { AddProviderParams, UpdateProviderParams } from '../services/aiOsService';
 import type { AiConversation, AiMessage, UsageSummary, UserProvider } from '../types/aiOs';
+import type { AppDispatch } from './index';
 import { resetUserScopedState } from './resetActions';
 
 const log = debug('ai-os:slice');
@@ -24,6 +25,8 @@ interface AiOsState {
   error: string | null;
   sendingMessage: boolean;
   providerTestStates: Record<string, ProviderTestState>;
+  streamingContent: string;
+  streamingConversationId: string | null;
 }
 
 const initialState: AiOsState = {
@@ -36,6 +39,8 @@ const initialState: AiOsState = {
   error: null,
   sendingMessage: false,
   providerTestStates: {},
+  streamingContent: '',
+  streamingConversationId: null,
 };
 
 export const fetchProviders = createAsyncThunk('aiOs/fetchProviders', async () => {
@@ -109,6 +114,43 @@ export const sendMessage = createAsyncThunk(
   }
 );
 
+/**
+ * Stream a chat message via the SSE endpoint (`POST /ai-os/stream`).
+ *
+ * Dispatches `setStreamingChunk` for each arriving delta, then reloads the
+ * conversation once the `done` event fires so the final persisted message
+ * (with accurate token counts) replaces the streamed content in the store.
+ */
+export const streamMessage =
+  ({ conversation_id, content }: { conversation_id: string; content: string }) =>
+  async (dispatch: AppDispatch) => {
+    log('streamMessage conversation_id=%s', conversation_id);
+    dispatch(setStreamingChunk({ conversationId: conversation_id, chunk: '' }));
+    dispatch(aiOsSlice.actions._setStreamingConversation(conversation_id));
+    dispatch(aiOsSlice.actions._setSendingMessage(true));
+    dispatch(clearError());
+
+    await aiOsService.streamChat(
+      conversation_id,
+      content,
+      chunk => {
+        dispatch(setStreamingChunk({ conversationId: conversation_id, chunk }));
+      },
+      async _usage => {
+        log('streamMessage done conversation_id=%s', conversation_id);
+        await dispatch(fetchConversation(conversation_id));
+        dispatch(clearStreaming());
+        dispatch(aiOsSlice.actions._setSendingMessage(false));
+      },
+      err => {
+        log('streamMessage error conversation_id=%s err=%s', conversation_id, err);
+        dispatch(aiOsSlice.actions._setError(err));
+        dispatch(clearStreaming());
+        dispatch(aiOsSlice.actions._setSendingMessage(false));
+      }
+    );
+  };
+
 export const fetchUsage = createAsyncThunk('aiOs/fetchUsage', async (days?: number) => {
   log('fetchUsage days=%d', days ?? 30);
   return aiOsService.getUsage(days);
@@ -123,6 +165,40 @@ const aiOsSlice = createSlice({
     },
     clearError(state) {
       state.error = null;
+    },
+    /**
+     * Append a streaming text chunk for the given conversation.
+     * When `chunk` is an empty string (first dispatch), it resets the buffer
+     * and sets `streamingConversationId` so the UI knows streaming has begun.
+     */
+    setStreamingChunk(
+      state,
+      action: PayloadAction<{ conversationId: string; chunk: string }>
+    ) {
+      const { conversationId, chunk } = action.payload;
+      if (!chunk) {
+        // Empty chunk signals stream start — reset buffer and bind conversation.
+        state.streamingContent = '';
+        state.streamingConversationId = conversationId;
+      } else {
+        state.streamingContent += chunk;
+      }
+    },
+    /** Reset streaming state after a stream completes or errors. */
+    clearStreaming(state) {
+      state.streamingContent = '';
+      state.streamingConversationId = null;
+    },
+    // Internal helpers used by the `streamMessage` thunk —
+    // not intended for direct dispatch from UI components.
+    _setStreamingConversation(state, action: PayloadAction<string | null>) {
+      state.streamingConversationId = action.payload;
+    },
+    _setSendingMessage(state, action: PayloadAction<boolean>) {
+      state.sendingMessage = action.payload;
+    },
+    _setError(state, action: PayloadAction<string>) {
+      state.error = action.payload;
     },
   },
   extraReducers: builder => {
@@ -267,7 +343,8 @@ const aiOsSlice = createSlice({
   },
 });
 
-export const { setActiveConversation, clearError } = aiOsSlice.actions;
+export const { setActiveConversation, clearError, setStreamingChunk, clearStreaming } =
+  aiOsSlice.actions;
 
 export const selectProviders = (state: { aiOs: AiOsState }) => state.aiOs.providers;
 
@@ -285,5 +362,9 @@ export const selectUsage = (state: { aiOs: AiOsState }) => state.aiOs.usage;
 
 export const selectProviderTestState = (providerId: string) => (state: { aiOs: AiOsState }) =>
   state.aiOs.providerTestStates[providerId] ?? { status: 'idle' };
+
+export const selectStreamingContent = (state: { aiOs: AiOsState }) => state.aiOs.streamingContent;
+export const selectStreamingConversationId = (state: { aiOs: AiOsState }) =>
+  state.aiOs.streamingConversationId;
 
 export default aiOsSlice.reducer;
