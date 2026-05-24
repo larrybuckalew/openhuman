@@ -218,7 +218,8 @@ pub fn schema(function: &str) -> ControllerSchema {
         "provider_test" => ControllerSchema {
             namespace: "ai_os",
             function: "provider_test",
-            description: "Send a test message to a provider to verify connectivity and credentials.",
+            description:
+                "Send a test message to a provider to verify connectivity and credentials.",
             inputs: vec![FieldSchema {
                 name: "id",
                 ty: TypeSchema::String,

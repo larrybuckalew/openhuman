@@ -1,7 +1,7 @@
 import { type FC, useState } from 'react';
 
-import { useAppDispatch } from '../../store/hooks';
 import { fetchUsage } from '../../store/aiOsSlice';
+import { useAppDispatch } from '../../store/hooks';
 import type { UsageSummary } from '../../types/aiOs';
 
 interface TokenUsagePanelProps {

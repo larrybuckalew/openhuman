@@ -1,7 +1,7 @@
 import { type FC } from 'react';
 
-import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { createConversation, setActiveConversation } from '../../store/aiOsSlice';
+import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import type { AiConversation, UserProvider } from '../../types/aiOs';
 import { ProviderCard } from './ProviderCard';
 
@@ -24,12 +24,7 @@ export const ProviderSidebar: FC<ProviderSidebarProps> = ({
   const sendingMessage = useAppSelector(s => s.aiOs.sendingMessage);
 
   const handleNewConversation = (provider: UserProvider) => {
-    void dispatch(
-      createConversation({
-        provider_id: provider.id,
-        model: provider.default_model,
-      })
-    );
+    void dispatch(createConversation({ provider_id: provider.id, model: provider.default_model }));
   };
 
   const conversationsByProvider: Record<string, AiConversation[]> = {};

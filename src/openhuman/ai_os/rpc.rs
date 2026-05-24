@@ -5,7 +5,7 @@ use crate::openhuman::config::Config;
 use crate::openhuman::providers::traits::ChatMessage;
 
 use super::store;
-use super::types::{AiConversation, AiMessage, ProviderKind, UserProvider, UsageSummary};
+use super::types::{AiConversation, AiMessage, ProviderKind, UsageSummary, UserProvider};
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
@@ -82,9 +82,7 @@ fn load_config_sync() -> Result<Config, String> {
 
 // ─── provider handlers ───────────────────────────────────────────────────────
 
-pub async fn handle_provider_add(
-    params: Map<String, Value>,
-) -> Result<Value, String> {
+pub async fn handle_provider_add(params: Map<String, Value>) -> Result<Value, String> {
     tracing::debug!("[ai_os][rpc] provider_add");
     let config = crate::openhuman::config::load_config_with_timeout().await?;
 
@@ -120,9 +118,7 @@ pub async fn handle_provider_add(
     serde_json::to_value(&provider).map_err(|e| e.to_string())
 }
 
-pub async fn handle_provider_update(
-    params: Map<String, Value>,
-) -> Result<Value, String> {
+pub async fn handle_provider_update(params: Map<String, Value>) -> Result<Value, String> {
     tracing::debug!("[ai_os][rpc] provider_update");
     let config = crate::openhuman::config::load_config_with_timeout().await?;
 
@@ -166,16 +162,13 @@ pub async fn handle_provider_update(
     serde_json::to_value(&provider).map_err(|e| e.to_string())
 }
 
-pub async fn handle_provider_delete(
-    params: Map<String, Value>,
-) -> Result<Value, String> {
+pub async fn handle_provider_delete(params: Map<String, Value>) -> Result<Value, String> {
     tracing::debug!("[ai_os][rpc] provider_delete");
     let config = crate::openhuman::config::load_config_with_timeout().await?;
     let id = param_str(&params, "id")?;
 
     store::with_connection(&config, |conn| {
-        store::provider_delete(conn, &id)
-            .map_err(|e| anyhow::anyhow!("provider_delete: {e}"))?;
+        store::provider_delete(conn, &id).map_err(|e| anyhow::anyhow!("provider_delete: {e}"))?;
         Ok(())
     })
     .map_err(|e| e.to_string())?;
@@ -184,9 +177,7 @@ pub async fn handle_provider_delete(
     Ok(serde_json::json!({ "ok": true }))
 }
 
-pub async fn handle_provider_list(
-    _params: Map<String, Value>,
-) -> Result<Value, String> {
+pub async fn handle_provider_list(_params: Map<String, Value>) -> Result<Value, String> {
     tracing::debug!("[ai_os][rpc] provider_list");
     let config = crate::openhuman::config::load_config_with_timeout().await?;
 
@@ -200,9 +191,7 @@ pub async fn handle_provider_list(
     Ok(serde_json::json!({ "providers": val }))
 }
 
-pub async fn handle_provider_test(
-    params: Map<String, Value>,
-) -> Result<Value, String> {
+pub async fn handle_provider_test(params: Map<String, Value>) -> Result<Value, String> {
     tracing::debug!("[ai_os][rpc] provider_test");
     let config = crate::openhuman::config::load_config_with_timeout().await?;
     let id = param_str(&params, "id")?;
@@ -241,9 +230,7 @@ pub async fn handle_provider_test(
 
 // ─── conversation handlers ────────────────────────────────────────────────────
 
-pub async fn handle_conversation_create(
-    params: Map<String, Value>,
-) -> Result<Value, String> {
+pub async fn handle_conversation_create(params: Map<String, Value>) -> Result<Value, String> {
     tracing::debug!("[ai_os][rpc] conversation_create");
     let config = crate::openhuman::config::load_config_with_timeout().await?;
     let provider_id = param_str(&params, "provider_id")?;
@@ -279,9 +266,7 @@ pub async fn handle_conversation_create(
     serde_json::to_value(&conv).map_err(|e| e.to_string())
 }
 
-pub async fn handle_conversation_list(
-    params: Map<String, Value>,
-) -> Result<Value, String> {
+pub async fn handle_conversation_list(params: Map<String, Value>) -> Result<Value, String> {
     tracing::debug!("[ai_os][rpc] conversation_list");
     let config = crate::openhuman::config::load_config_with_timeout().await?;
     let provider_id = param_str_opt(&params, "provider_id")?;
@@ -292,14 +277,15 @@ pub async fn handle_conversation_list(
     })
     .map_err(|e| e.to_string())?;
 
-    tracing::debug!(count = conversations.len(), "[ai_os][rpc] conversation_list: ok");
+    tracing::debug!(
+        count = conversations.len(),
+        "[ai_os][rpc] conversation_list: ok"
+    );
     let val = serde_json::to_value(&conversations).map_err(|e| e.to_string())?;
     Ok(serde_json::json!({ "conversations": val }))
 }
 
-pub async fn handle_conversation_get(
-    params: Map<String, Value>,
-) -> Result<Value, String> {
+pub async fn handle_conversation_get(params: Map<String, Value>) -> Result<Value, String> {
     tracing::debug!("[ai_os][rpc] conversation_get");
     let config = crate::openhuman::config::load_config_with_timeout().await?;
     let id = param_str(&params, "id")?;
@@ -324,9 +310,7 @@ pub async fn handle_conversation_get(
     Ok(serde_json::json!({ "conversation": conv_val, "messages": msg_val }))
 }
 
-pub async fn handle_conversation_delete(
-    params: Map<String, Value>,
-) -> Result<Value, String> {
+pub async fn handle_conversation_delete(params: Map<String, Value>) -> Result<Value, String> {
     tracing::debug!("[ai_os][rpc] conversation_delete");
     let config = crate::openhuman::config::load_config_with_timeout().await?;
     let id = param_str(&params, "id")?;
@@ -344,9 +328,7 @@ pub async fn handle_conversation_delete(
 
 // ─── chat handler ─────────────────────────────────────────────────────────────
 
-pub async fn handle_chat_send(
-    params: Map<String, Value>,
-) -> Result<Value, String> {
+pub async fn handle_chat_send(params: Map<String, Value>) -> Result<Value, String> {
     tracing::debug!("[ai_os][rpc] chat_send");
     let config = crate::openhuman::config::load_config_with_timeout().await?;
     let conversation_id = param_str(&params, "conversation_id")?;
@@ -455,9 +437,7 @@ pub async fn handle_chat_send(
 
 // ─── usage handler ────────────────────────────────────────────────────────────
 
-pub async fn handle_usage_get(
-    params: Map<String, Value>,
-) -> Result<Value, String> {
+pub async fn handle_usage_get(params: Map<String, Value>) -> Result<Value, String> {
     tracing::debug!("[ai_os][rpc] usage_get");
     let config = crate::openhuman::config::load_config_with_timeout().await?;
     let days = param_i64_opt(&params, "days")?.unwrap_or(30);

@@ -9,7 +9,12 @@ interface ChatInputProps {
   onSend: (content: string) => void;
 }
 
-export const ChatInput: FC<ChatInputProps> = ({ conversation, provider, sendingMessage, onSend }) => {
+export const ChatInput: FC<ChatInputProps> = ({
+  conversation,
+  provider,
+  sendingMessage,
+  onSend,
+}) => {
   const [content, setContent] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 

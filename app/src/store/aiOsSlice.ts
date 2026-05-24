@@ -1,11 +1,8 @@
 import { createAsyncThunk, createSlice, type PayloadAction } from '@reduxjs/toolkit';
 import debug from 'debug';
 
-import type {
-  AddProviderParams,
-  UpdateProviderParams,
-} from '../services/aiOsService';
 import * as aiOsService from '../services/aiOsService';
+import type { AddProviderParams, UpdateProviderParams } from '../services/aiOsService';
 import type { AiConversation, AiMessage, UsageSummary, UserProvider } from '../types/aiOs';
 import { resetUserScopedState } from './resetActions';
 
@@ -90,13 +87,10 @@ export const fetchConversations = createAsyncThunk(
   }
 );
 
-export const fetchConversation = createAsyncThunk(
-  'aiOs/fetchConversation',
-  async (id: string) => {
-    log('fetchConversation id=%s', id);
-    return aiOsService.getConversation(id);
-  }
-);
+export const fetchConversation = createAsyncThunk('aiOs/fetchConversation', async (id: string) => {
+  log('fetchConversation id=%s', id);
+  return aiOsService.getConversation(id);
+});
 
 export const deleteConversation = createAsyncThunk(
   'aiOs/deleteConversation',
@@ -283,8 +277,9 @@ export const selectActiveConversation = (state: { aiOs: AiOsState }) => {
   return state.aiOs.conversations.find(c => c.id === id) ?? null;
 };
 
-export const selectConversationMessages = (conversationId: string) => (state: { aiOs: AiOsState }) =>
-  state.aiOs.messages[conversationId] ?? [];
+export const selectConversationMessages =
+  (conversationId: string) => (state: { aiOs: AiOsState }) =>
+    state.aiOs.messages[conversationId] ?? [];
 
 export const selectUsage = (state: { aiOs: AiOsState }) => state.aiOs.usage;
 

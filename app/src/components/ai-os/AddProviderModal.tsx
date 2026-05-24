@@ -1,7 +1,7 @@
 import { type FC, useState } from 'react';
 
-import { useAppDispatch } from '../../store/hooks';
 import { addProvider, updateProvider } from '../../store/aiOsSlice';
+import { useAppDispatch } from '../../store/hooks';
 import type { ProviderKind, UserProvider } from '../../types/aiOs';
 import { PROVIDER_TEMPLATES } from './ProviderTemplates';
 

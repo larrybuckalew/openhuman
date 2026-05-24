@@ -1,7 +1,7 @@
 import { type FC } from 'react';
 
-import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import { deleteProvider, selectProviderTestState, testProvider } from '../../store/aiOsSlice';
+import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import type { UserProvider } from '../../types/aiOs';
 
 interface ProviderCardProps {

@@ -43,11 +43,7 @@ export interface ConversationDetail {
 
 export interface SendMessageResult {
   message: AiMessage;
-  usage: {
-    input_tokens: number;
-    output_tokens: number;
-    cost_usd: number;
-  };
+  usage: { input_tokens: number; output_tokens: number; cost_usd: number };
 }
 
 export async function listProviders(): Promise<UserProvider[]> {
@@ -61,26 +57,17 @@ export async function listProviders(): Promise<UserProvider[]> {
 
 export async function addProvider(params: AddProviderParams): Promise<UserProvider> {
   log('addProvider name=%s kind=%s', params.name, params.kind);
-  return callCoreRpc<UserProvider>({
-    method: 'openhuman.ai_os_provider_add',
-    params,
-  });
+  return callCoreRpc<UserProvider>({ method: 'openhuman.ai_os_provider_add', params });
 }
 
 export async function updateProvider(params: UpdateProviderParams): Promise<UserProvider> {
   log('updateProvider id=%s', params.id);
-  return callCoreRpc<UserProvider>({
-    method: 'openhuman.ai_os_provider_update',
-    params,
-  });
+  return callCoreRpc<UserProvider>({ method: 'openhuman.ai_os_provider_update', params });
 }
 
 export async function deleteProvider(id: string): Promise<void> {
   log('deleteProvider id=%s', id);
-  await callCoreRpc<{ ok: true }>({
-    method: 'openhuman.ai_os_provider_delete',
-    params: { id },
-  });
+  await callCoreRpc<{ ok: true }>({ method: 'openhuman.ai_os_provider_delete', params: { id } });
 }
 
 export async function testProvider(id: string): Promise<ProviderTestResult> {
@@ -91,12 +78,11 @@ export async function testProvider(id: string): Promise<ProviderTestResult> {
   });
 }
 
-export async function createConversation(params: CreateConversationParams): Promise<AiConversation> {
+export async function createConversation(
+  params: CreateConversationParams
+): Promise<AiConversation> {
   log('createConversation provider_id=%s', params.provider_id);
-  return callCoreRpc<AiConversation>({
-    method: 'openhuman.ai_os_conversation_create',
-    params,
-  });
+  return callCoreRpc<AiConversation>({ method: 'openhuman.ai_os_conversation_create', params });
 }
 
 export async function listConversations(provider_id?: string): Promise<AiConversation[]> {

@@ -121,9 +121,8 @@ fn row_to_provider(row: &rusqlite::Row<'_>) -> rusqlite::Result<UserProvider> {
     let updated_at: i64 = row.get(8)?;
 
     // Parse kind from stored string (snake_case without quotes)
-    let kind = serde_json::from_str(&format!("\"{}\"", kind_str)).unwrap_or(
-        crate::openhuman::ai_os::types::ProviderKind::OpenAiCompatible,
-    );
+    let kind = serde_json::from_str(&format!("\"{}\"", kind_str))
+        .unwrap_or(crate::openhuman::ai_os::types::ProviderKind::OpenAiCompatible);
 
     Ok(UserProvider {
         id,
@@ -149,7 +148,14 @@ pub fn conversation_upsert(conn: &Connection, c: &AiConversation) -> rusqlite::R
              provider_id = excluded.provider_id,
              model      = excluded.model,
              updated_at = excluded.updated_at",
-        params![c.id, c.title, c.provider_id, c.model, c.created_at, c.updated_at],
+        params![
+            c.id,
+            c.title,
+            c.provider_id,
+            c.model,
+            c.created_at,
+            c.updated_at
+        ],
     )?;
     Ok(())
 }
@@ -194,10 +200,7 @@ pub fn conversation_delete(conn: &Connection, id: &str) -> rusqlite::Result<()> 
         "DELETE FROM ai_os_messages WHERE conversation_id = ?1",
         params![id],
     )?;
-    conn.execute(
-        "DELETE FROM ai_os_conversations WHERE id = ?1",
-        params![id],
-    )?;
+    conn.execute("DELETE FROM ai_os_conversations WHERE id = ?1", params![id])?;
     Ok(())
 }
 
