@@ -12,7 +12,7 @@ const SALT_LENGTH: usize = 16;
 /// Nonce length for AES-256-GCM (96 bits)
 const NONCE_LENGTH: usize = 12;
 /// Derived key length (256 bits for AES-256)
-const KEY_LENGTH: usize = 32;
+pub(crate) const KEY_LENGTH: usize = 32;
 
 /// Encrypted payload with metadata for decryption
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -32,6 +32,12 @@ pub struct EncryptionKey {
 }
 
 impl EncryptionKey {
+    /// Create an EncryptionKey directly from raw key bytes.
+    /// Used for machine-local keys that are stored separately from the data they protect.
+    pub fn from_bytes(key_bytes: [u8; KEY_LENGTH]) -> Self {
+        Self { key_bytes }
+    }
+
     /// Derive an encryption key from a password and salt using Argon2id.
     pub fn derive(password: &str, salt: &[u8]) -> Result<Self, String> {
         let params = Params::new(65536, 3, 1, Some(KEY_LENGTH))

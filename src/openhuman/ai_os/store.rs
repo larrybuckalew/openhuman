@@ -57,6 +57,20 @@ pub fn provider_upsert(conn: &Connection, p: &UserProvider) -> rusqlite::Result<
     let kind = serde_json::to_string(&p.kind).unwrap_or_else(|_| "\"open_ai_compatible\"".into());
     // strip surrounding quotes that serde adds for string enums
     let kind = kind.trim_matches('"').to_string();
+
+    // Encrypt the API key before storing it.  Non-empty keys are always encrypted;
+    // absent or empty keys are stored as NULL / empty unchanged.
+    let encrypted_api_key: Option<String> = match &p.api_key {
+        Some(key) if !key.is_empty() => {
+            let enc = super::key::encrypt_api_key(key).map_err(|e| {
+                rusqlite::Error::ToSqlConversionFailure(Box::<dyn std::error::Error + Send + Sync>::from(e))
+            })?;
+            tracing::debug!("[ai_os][store] encrypted api_key for provider {}", p.id);
+            Some(enc)
+        }
+        other => other.clone(),
+    };
+
     conn.execute(
         "INSERT INTO ai_os_providers
              (id, name, kind, base_url, api_key, default_model, enabled, created_at, updated_at,
@@ -76,7 +90,7 @@ pub fn provider_upsert(conn: &Connection, p: &UserProvider) -> rusqlite::Result<
             p.name,
             kind,
             p.base_url,
-            p.api_key,
+            encrypted_api_key,
             p.default_model,
             p.enabled as i64,
             p.created_at,
@@ -120,12 +134,29 @@ fn row_to_provider(row: &rusqlite::Row<'_>) -> rusqlite::Result<UserProvider> {
     let name: String = row.get(1)?;
     let kind_str: String = row.get(2)?;
     let base_url: String = row.get(3)?;
-    let api_key: Option<String> = row.get(4)?;
+    let raw_api_key: Option<String> = row.get(4)?;
     let default_model: String = row.get(5)?;
     let enabled: i64 = row.get(6)?;
     let created_at: i64 = row.get(7)?;
     let updated_at: i64 = row.get(8)?;
     let vps_url: Option<String> = row.get(9)?;
+
+    // Decrypt the API key transparently.  Plaintext legacy values are returned
+    // as-is by `decrypt_api_key` so existing rows continue to work.
+    let api_key: Option<String> = match raw_api_key {
+        Some(ref enc) if !enc.is_empty() => {
+            let plaintext = super::key::decrypt_api_key(enc).map_err(|e| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    4,
+                    rusqlite::types::Type::Text,
+                    Box::<dyn std::error::Error + Send + Sync>::from(e),
+                )
+            })?;
+            tracing::debug!("[ai_os][store] decrypted api_key for provider {}", id);
+            Some(plaintext)
+        }
+        other => other,
+    };
 
     // Parse kind from stored string (snake_case without quotes)
     let kind = serde_json::from_str(&format!("\"{}\"", kind_str))

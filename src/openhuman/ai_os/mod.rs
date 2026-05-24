@@ -8,6 +8,7 @@
 //! - `ai_os.usage_get`
 
 pub mod chat;
+pub mod key;
 mod schemas;
 pub mod store;
 pub mod stream;
