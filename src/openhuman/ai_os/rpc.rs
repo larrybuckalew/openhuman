@@ -440,6 +440,70 @@ pub async fn handle_chat_send(params: Map<String, Value>) -> Result<Value, Strin
     }))
 }
 
+// ─── conversation search handler ─────────────────────────────────────────────
+
+pub async fn handle_conversation_search(params: Map<String, Value>) -> Result<Value, String> {
+    tracing::debug!("[ai_os][rpc] conversation_search");
+    let config = crate::openhuman::config::load_config_with_timeout().await?;
+    let query = param_str(&params, "query")?;
+    let limit = param_i64_opt(&params, "limit")?.unwrap_or(20) as usize;
+
+    let conversations = store::with_connection(&config, |conn| {
+        store::conversation_search(conn, &query, limit)
+            .map_err(|e| anyhow::anyhow!("conversation_search: {e}"))
+    })
+    .map_err(|e| e.to_string())?;
+
+    tracing::debug!(
+        query = %query,
+        count = conversations.len(),
+        "[ai_os][rpc] conversation_search: ok"
+    );
+    let val = serde_json::to_value(&conversations).map_err(|e| e.to_string())?;
+    Ok(serde_json::json!({ "conversations": val }))
+}
+
+// ─── models list handler ──────────────────────────────────────────────────────
+
+pub async fn handle_models_list(params: Map<String, Value>) -> Result<Value, String> {
+    tracing::debug!("[ai_os][rpc] models_list");
+    let config = crate::openhuman::config::load_config_with_timeout().await?;
+    let provider_id = param_str(&params, "provider_id")?;
+
+    let mut provider = store::with_connection(&config, |conn| {
+        store::provider_get(conn, &provider_id)
+            .map_err(|e| anyhow::anyhow!("provider_get: {e}"))?
+            .ok_or_else(|| anyhow::anyhow!("provider not found: {provider_id}"))
+    })
+    .map_err(|e| e.to_string())?;
+
+    // Decrypt api_key if present
+    if let Some(ref enc_key) = provider.api_key.clone() {
+        if !enc_key.is_empty() {
+            match super::key::decrypt_api_key(enc_key) {
+                Ok(plain) => provider.api_key = Some(plain),
+                Err(e) => {
+                    tracing::debug!(
+                        provider_id = %provider_id,
+                        error = %e,
+                        "[ai_os][rpc] models_list: failed to decrypt api_key, using as-is"
+                    );
+                }
+            }
+        }
+    }
+
+    let models = super::models::list_models(&provider).await;
+
+    tracing::debug!(
+        provider_id = %provider_id,
+        count = models.len(),
+        "[ai_os][rpc] models_list: ok"
+    );
+    let val = serde_json::to_value(&models).map_err(|e| e.to_string())?;
+    Ok(serde_json::json!({ "models": val, "provider_id": provider_id }))
+}
+
 // ─── usage handler ────────────────────────────────────────────────────────────
 
 pub async fn handle_usage_get(params: Map<String, Value>) -> Result<Value, String> {

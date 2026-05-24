@@ -234,6 +234,26 @@ pub fn conversation_get(conn: &Connection, id: &str) -> rusqlite::Result<Option<
     .optional()
 }
 
+pub fn conversation_search(
+    conn: &rusqlite::Connection,
+    query: &str,
+    limit: usize,
+) -> rusqlite::Result<Vec<AiConversation>> {
+    let pattern = format!("%{}%", query);
+    let mut stmt = conn.prepare(
+        "SELECT DISTINCT c.id, c.title, c.provider_id, c.model, c.created_at, c.updated_at
+         FROM ai_os_conversations c
+         LEFT JOIN ai_os_messages m ON m.conversation_id = c.id
+         WHERE c.title LIKE ?1 OR m.content LIKE ?1
+         ORDER BY c.updated_at DESC
+         LIMIT ?2",
+    )?;
+    let rows = stmt
+        .query_map(params![pattern, limit as i64], row_to_conversation)?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
 pub fn conversation_delete(conn: &Connection, id: &str) -> rusqlite::Result<()> {
     conn.execute(
         "DELETE FROM ai_os_messages WHERE conversation_id = ?1",

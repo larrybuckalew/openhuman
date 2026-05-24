@@ -9,6 +9,7 @@
 
 pub mod chat;
 pub mod key;
+pub mod models;
 mod schemas;
 pub mod store;
 pub mod stream;

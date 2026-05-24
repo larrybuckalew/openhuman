@@ -58,3 +58,10 @@ export interface ProviderTemplate {
   description: string;
   requires_api_key: boolean;
 }
+
+export interface ModelInfo {
+  id: string;
+  name: string;
+  context_length?: number;
+  description?: string;
+}

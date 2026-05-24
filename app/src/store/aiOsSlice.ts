@@ -3,7 +3,7 @@ import debug from 'debug';
 
 import * as aiOsService from '../services/aiOsService';
 import type { AddProviderParams, UpdateProviderParams } from '../services/aiOsService';
-import type { AiConversation, AiMessage, UsageSummary, UserProvider } from '../types/aiOs';
+import type { AiConversation, AiMessage, ModelInfo, UsageSummary, UserProvider } from '../types/aiOs';
 import type { AppDispatch } from './index';
 import { resetUserScopedState } from './resetActions';
 
@@ -27,6 +27,10 @@ interface AiOsState {
   providerTestStates: Record<string, ProviderTestState>;
   streamingContent: string;
   streamingConversationId: string | null;
+  modelsByProvider: Record<string, ModelInfo[]>;
+  modelsStatus: Record<string, 'idle' | 'loading' | 'succeeded' | 'failed'>;
+  searchResults: AiConversation[] | null;
+  searchQuery: string;
 }
 
 const initialState: AiOsState = {
@@ -41,6 +45,10 @@ const initialState: AiOsState = {
   providerTestStates: {},
   streamingContent: '',
   streamingConversationId: null,
+  modelsByProvider: {},
+  modelsStatus: {},
+  searchResults: null,
+  searchQuery: '',
 };
 
 export const fetchProviders = createAsyncThunk('aiOs/fetchProviders', async () => {
@@ -122,9 +130,18 @@ export const sendMessage = createAsyncThunk(
  * (with accurate token counts) replaces the streamed content in the store.
  */
 export const streamMessage =
-  ({ conversation_id, content }: { conversation_id: string; content: string }) =>
+  ({
+    conversation_id,
+    content,
+    model,
+  }: {
+    conversation_id: string;
+    content: string;
+    /** Optional model override — when provided, uses this model instead of the conversation default. */
+    model?: string;
+  }) =>
   async (dispatch: AppDispatch) => {
-    log('streamMessage conversation_id=%s', conversation_id);
+    log('streamMessage conversation_id=%s model=%s', conversation_id, model ?? 'default');
     dispatch(setStreamingChunk({ conversationId: conversation_id, chunk: '' }));
     dispatch(aiOsSlice.actions._setStreamingConversation(conversation_id));
     dispatch(aiOsSlice.actions._setSendingMessage(true));
@@ -147,7 +164,8 @@ export const streamMessage =
         dispatch(aiOsSlice.actions._setError(err));
         dispatch(clearStreaming());
         dispatch(aiOsSlice.actions._setSendingMessage(false));
-      }
+      },
+      model
     );
   };
 
@@ -155,6 +173,23 @@ export const fetchUsage = createAsyncThunk('aiOs/fetchUsage', async (days?: numb
   log('fetchUsage days=%d', days ?? 30);
   return aiOsService.getUsage(days);
 });
+
+export const fetchModels = createAsyncThunk(
+  'aiOs/fetchModels',
+  async (providerId: string) => {
+    log('fetchModels providerId=%s', providerId);
+    return aiOsService.listModels(providerId);
+  }
+);
+
+export const searchConversations = createAsyncThunk(
+  'aiOs/searchConversations',
+  async ({ query, limit }: { query: string; limit?: number }) => {
+    log('searchConversations query=%s limit=%d', query, limit ?? 20);
+    const result = await aiOsService.searchConversations(query, limit);
+    return { conversations: result.conversations, query };
+  }
+);
 
 const aiOsSlice = createSlice({
   name: 'aiOs',
@@ -188,6 +223,11 @@ const aiOsSlice = createSlice({
     clearStreaming(state) {
       state.streamingContent = '';
       state.streamingConversationId = null;
+    },
+    /** Reset conversation search state. */
+    clearSearch(state) {
+      state.searchResults = null;
+      state.searchQuery = '';
     },
     // Internal helpers used by the `streamMessage` thunk —
     // not intended for direct dispatch from UI components.
@@ -340,10 +380,33 @@ const aiOsSlice = createSlice({
       .addCase(fetchUsage.rejected, (state, action) => {
         state.error = action.error.message ?? 'Failed to fetch usage';
       });
+
+    builder
+      .addCase(fetchModels.pending, (state, action) => {
+        state.modelsStatus[action.meta.arg] = 'loading';
+      })
+      .addCase(fetchModels.fulfilled, (state, action) => {
+        const { provider_id, models } = action.payload;
+        state.modelsByProvider[provider_id] = models;
+        state.modelsStatus[provider_id] = 'succeeded';
+      })
+      .addCase(fetchModels.rejected, (state, action) => {
+        state.modelsStatus[action.meta.arg] = 'failed';
+        state.error = action.error.message ?? 'Failed to fetch models';
+      });
+
+    builder
+      .addCase(searchConversations.fulfilled, (state, action) => {
+        state.searchResults = action.payload.conversations;
+        state.searchQuery = action.payload.query;
+      })
+      .addCase(searchConversations.rejected, (state, action) => {
+        state.error = action.error.message ?? 'Search failed';
+      });
   },
 });
 
-export const { setActiveConversation, clearError, setStreamingChunk, clearStreaming } =
+export const { setActiveConversation, clearError, setStreamingChunk, clearStreaming, clearSearch } =
   aiOsSlice.actions;
 
 export const selectProviders = (state: { aiOs: AiOsState }) => state.aiOs.providers;
@@ -366,5 +429,18 @@ export const selectProviderTestState = (providerId: string) => (state: { aiOs: A
 export const selectStreamingContent = (state: { aiOs: AiOsState }) => state.aiOs.streamingContent;
 export const selectStreamingConversationId = (state: { aiOs: AiOsState }) =>
   state.aiOs.streamingConversationId;
+
+export const selectModelsForProvider =
+  (providerId: string) =>
+  (state: { aiOs: AiOsState }): ModelInfo[] =>
+    state.aiOs.modelsByProvider[providerId] ?? [];
+
+export const selectModelsStatus =
+  (providerId: string) =>
+  (state: { aiOs: AiOsState }): 'idle' | 'loading' | 'succeeded' | 'failed' =>
+    state.aiOs.modelsStatus[providerId] ?? 'idle';
+
+export const selectSearchResults = (state: { aiOs: AiOsState }) => state.aiOs.searchResults;
+export const selectSearchQuery = (state: { aiOs: AiOsState }) => state.aiOs.searchQuery;
 
 export default aiOsSlice.reducer;

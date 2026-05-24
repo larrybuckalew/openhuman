@@ -18,8 +18,10 @@ pub fn all_controller_schemas() -> Vec<ControllerSchema> {
         schema("conversation_list"),
         schema("conversation_get"),
         schema("conversation_delete"),
+        schema("conversation_search"),
         schema("chat_send"),
         schema("usage_get"),
+        schema("models_list"),
     ]
 }
 
@@ -62,12 +64,20 @@ pub fn all_registered_controllers() -> Vec<RegisteredController> {
             handler: handle_conversation_delete,
         },
         RegisteredController {
+            schema: schema("conversation_search"),
+            handler: handle_conversation_search,
+        },
+        RegisteredController {
             schema: schema("chat_send"),
             handler: handle_chat_send,
         },
         RegisteredController {
             schema: schema("usage_get"),
             handler: handle_usage_get,
+        },
+        RegisteredController {
+            schema: schema("models_list"),
+            handler: handle_models_list,
         },
     ]
 }
@@ -415,6 +425,58 @@ pub fn schema(function: &str) -> ControllerSchema {
             }],
         },
 
+        "conversation_search" => ControllerSchema {
+            namespace: "ai_os",
+            function: "conversation_search",
+            description: "Search conversations by title or message content using a text query.",
+            inputs: vec![
+                FieldSchema {
+                    name: "query",
+                    ty: TypeSchema::String,
+                    comment: "Search text matched against conversation titles and message content.",
+                    required: true,
+                },
+                FieldSchema {
+                    name: "limit",
+                    ty: TypeSchema::I64,
+                    comment: "Maximum number of conversations to return. Defaults to 20.",
+                    required: false,
+                },
+            ],
+            outputs: vec![FieldSchema {
+                name: "conversations",
+                ty: TypeSchema::Array(Box::new(TypeSchema::Ref("AiConversation"))),
+                comment: "Matching conversations ordered by most recently updated first.",
+                required: true,
+            }],
+        },
+
+        "models_list" => ControllerSchema {
+            namespace: "ai_os",
+            function: "models_list",
+            description: "List available models for a registered AI provider.",
+            inputs: vec![FieldSchema {
+                name: "provider_id",
+                ty: TypeSchema::String,
+                comment: "Provider identifier to list models for.",
+                required: true,
+            }],
+            outputs: vec![
+                FieldSchema {
+                    name: "models",
+                    ty: TypeSchema::Array(Box::new(TypeSchema::Ref("ModelInfo"))),
+                    comment: "Available models for the provider.",
+                    required: true,
+                },
+                FieldSchema {
+                    name: "provider_id",
+                    ty: TypeSchema::String,
+                    comment: "The provider identifier the models belong to.",
+                    required: true,
+                },
+            ],
+        },
+
         _ => ControllerSchema {
             namespace: "ai_os",
             function: "unknown",
@@ -474,4 +536,12 @@ fn handle_chat_send(params: Map<String, Value>) -> ControllerFuture {
 
 fn handle_usage_get(params: Map<String, Value>) -> ControllerFuture {
     Box::pin(async move { rpc::handle_usage_get(params).await })
+}
+
+fn handle_conversation_search(params: Map<String, Value>) -> ControllerFuture {
+    Box::pin(async move { rpc::handle_conversation_search(params).await })
+}
+
+fn handle_models_list(params: Map<String, Value>) -> ControllerFuture {
+    Box::pin(async move { rpc::handle_models_list(params).await })
 }

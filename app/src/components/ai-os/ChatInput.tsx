@@ -1,11 +1,14 @@
 import { type FC, type KeyboardEvent, useRef, useState } from 'react';
 
 import type { AiConversation, UserProvider } from '../../types/aiOs';
+import { ModelPicker } from './ModelPicker';
 
 interface ChatInputProps {
   conversation: AiConversation;
   provider: UserProvider | null;
   sendingMessage: boolean;
+  selectedModel: string;
+  onModelChange: (modelId: string) => void;
   onSend: (content: string) => void;
 }
 
@@ -13,6 +16,8 @@ export const ChatInput: FC<ChatInputProps> = ({
   conversation,
   provider,
   sendingMessage,
+  selectedModel,
+  onModelChange,
   onSend,
 }) => {
   const [content, setContent] = useState('');
@@ -40,7 +45,11 @@ export const ChatInput: FC<ChatInputProps> = ({
           <span className="inline-flex items-center gap-1.5 text-[11px] px-2.5 py-1 rounded-full bg-stone-100 text-stone-500 border border-stone-200">
             <span className="font-medium text-stone-600">{provider.name}</span>
             <span className="text-stone-400">·</span>
-            <span className="font-mono">{conversation.model}</span>
+            <ModelPicker
+              providerId={conversation.provider_id}
+              value={selectedModel}
+              onChange={onModelChange}
+            />
           </span>
         </div>
       )}

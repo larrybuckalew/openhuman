@@ -1,6 +1,6 @@
 import debug from 'debug';
 
-import type { AiConversation, AiMessage, UsageSummary, UserProvider } from '../types/aiOs';
+import type { AiConversation, AiMessage, ModelInfo, UsageSummary, UserProvider } from '../types/aiOs';
 import { callCoreRpc, getCoreHttpBaseUrl, getCoreRpcToken } from './coreRpcClient';
 
 const log = debug('ai-os:service');
@@ -123,6 +123,25 @@ export async function sendMessage(
   });
 }
 
+export async function listModels(providerId: string): Promise<{ models: ModelInfo[]; provider_id: string }> {
+  log('listModels providerId=%s', providerId);
+  return callCoreRpc<{ models: ModelInfo[]; provider_id: string }>({
+    method: 'openhuman.ai_os_models_list',
+    params: { provider_id: providerId },
+  });
+}
+
+export async function searchConversations(
+  query: string,
+  limit?: number
+): Promise<{ conversations: AiConversation[] }> {
+  log('searchConversations query=%s limit=%d', query, limit ?? 20);
+  return callCoreRpc<{ conversations: AiConversation[] }>({
+    method: 'openhuman.ai_os_conversation_search',
+    params: limit !== undefined ? { query, limit } : { query },
+  });
+}
+
 export async function getUsage(days?: number): Promise<UsageSummary> {
   log('getUsage days=%d', days ?? 30);
   return callCoreRpc<UsageSummary>({
@@ -147,9 +166,10 @@ export async function streamChat(
   content: string,
   onDelta: (text: string) => void,
   onDone: (usage: { input_tokens: number; output_tokens: number; cost_usd: number }) => void,
-  onError: (err: string) => void
+  onError: (err: string) => void,
+  model?: string
 ): Promise<void> {
-  log('streamChat conversation_id=%s', conversationId);
+  log('streamChat conversation_id=%s model=%s', conversationId, model ?? 'default');
 
   let baseUrl: string;
   let token: string | null;
@@ -172,7 +192,11 @@ export async function streamChat(
     response = await fetch(`${baseUrl}/ai-os/stream`, {
       method: 'POST',
       headers,
-      body: JSON.stringify({ conversation_id: conversationId, content }),
+      body: JSON.stringify(
+        model
+          ? { conversation_id: conversationId, content, model }
+          : { conversation_id: conversationId, content }
+      ),
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : 'Network error on stream request';

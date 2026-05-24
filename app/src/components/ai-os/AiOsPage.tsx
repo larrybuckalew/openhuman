@@ -39,6 +39,9 @@ export const AiOsPage: FC = () => {
   const [showUsage, setShowUsage] = useState(false);
   const [showAddProvider, setShowAddProvider] = useState(false);
   const [editingProvider, setEditingProvider] = useState<UserProvider | null>(null);
+  // Track the model selected by the user in the ChatInput for the active conversation.
+  // Defaults to the conversation's model whenever the active conversation changes.
+  const [selectedModel, setSelectedModel] = useState<string>('');
 
   useEffect(() => {
     void dispatch(fetchProviders());
@@ -52,13 +55,25 @@ export const AiOsPage: FC = () => {
     }
   }, [dispatch, activeConversationId]);
 
+  // Reset selectedModel to conversation default when active conversation changes.
+  useEffect(() => {
+    if (activeConversation) {
+      setSelectedModel(activeConversation.model);
+    }
+  }, [activeConversation?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const activeProvider = activeConversation
     ? (providers.find(p => p.id === activeConversation.provider_id) ?? null)
     : null;
 
   const handleSend = (content: string) => {
     if (!activeConversationId) return;
-    void dispatch(streamMessage({ conversation_id: activeConversationId, content }));
+    const modelOverride = selectedModel && activeConversation && selectedModel !== activeConversation.model
+      ? selectedModel
+      : undefined;
+    void dispatch(
+      streamMessage({ conversation_id: activeConversationId, content, model: modelOverride })
+    );
   };
 
   const handleEditProvider = (provider: UserProvider) => {
@@ -126,6 +141,8 @@ export const AiOsPage: FC = () => {
                 conversation={activeConversation}
                 provider={activeProvider}
                 sendingMessage={sendingMessage}
+                selectedModel={selectedModel || activeConversation.model}
+                onModelChange={setSelectedModel}
                 onSend={handleSend}
               />
             </div>
