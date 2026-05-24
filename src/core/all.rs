@@ -104,6 +104,8 @@ fn cli_adapters() -> &'static [RegisteredCliAdapter] {
 /// function must be called here to make it available via RPC and CLI.
 fn build_registered_controllers() -> Vec<RegisteredController> {
     let mut controllers = Vec::new();
+    // AI OS — user-managed provider management, conversations, and usage tracking
+    controllers.extend(crate::openhuman::ai_os::all_ai_os_registered_controllers());
     // Application information and capabilities
     controllers.extend(crate::openhuman::about_app::all_about_app_registered_controllers());
     // Core application shell state
@@ -239,6 +241,7 @@ fn build_internal_only_controllers() -> Vec<RegisteredController> {
 /// (schema) for each controller. This is used for discovery and validation.
 fn build_declared_controller_schemas() -> Vec<ControllerSchema> {
     let mut schemas = Vec::new();
+    schemas.extend(crate::openhuman::ai_os::all_ai_os_controller_schemas());
     schemas.extend(crate::openhuman::about_app::all_about_app_controller_schemas());
     schemas.extend(crate::openhuman::app_state::all_app_state_controller_schemas());
     schemas.extend(crate::openhuman::composio::all_composio_controller_schemas());
