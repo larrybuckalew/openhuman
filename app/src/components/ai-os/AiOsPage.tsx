@@ -58,7 +58,7 @@ export const AiOsPage: FC = () => {
 
   const handleSend = (content: string) => {
     if (!activeConversationId) return;
-    void dispatch(sendMessage({ conversation_id: activeConversationId, content }));
+    void dispatch(streamMessage({ conversation_id: activeConversationId, content }));
   };
 
   const handleEditProvider = (provider: UserProvider) => {
@@ -115,7 +115,13 @@ export const AiOsPage: FC = () => {
             <TokenUsagePanel usage={usage} />
           ) : activeConversation ? (
             <div className="flex-1 flex flex-col overflow-hidden">
-              <ChatMessages messages={messages} sendingMessage={sendingMessage} />
+              <ChatMessages
+                messages={messages}
+                sendingMessage={sendingMessage}
+                streamingContent={streamingContent}
+                streamingConversationId={streamingConversationId}
+                activeConversationId={activeConversationId}
+              />
               <ChatInput
                 conversation={activeConversation}
                 provider={activeProvider}

@@ -18,6 +18,7 @@ export const AddProviderModal: FC<AddProviderModalProps> = ({ onClose, editingPr
   const [name, setName] = useState(editingProvider?.name ?? '');
   const [kind, setKind] = useState<ProviderKind>(editingProvider?.kind ?? 'openai_compatible');
   const [baseUrl, setBaseUrl] = useState(editingProvider?.base_url ?? '');
+  const [vpsUrl, setVpsUrl] = useState(editingProvider?.vps_url ?? '');
   const [apiKey, setApiKey] = useState(editingProvider?.api_key ?? '');
   const [defaultModel, setDefaultModel] = useState(editingProvider?.default_model ?? '');
   const [showApiKey, setShowApiKey] = useState(false);
@@ -25,6 +26,14 @@ export const AddProviderModal: FC<AddProviderModalProps> = ({ onClose, editingPr
   const [error, setError] = useState<string | null>(null);
 
   const isDualEndpoint = HERMES_OPENCLAW.some(n => name.toLowerCase().includes(n.toLowerCase()));
+
+  const showVpsUrlField =
+    kind === 'openai_compatible' &&
+    (isDualEndpoint ||
+      !baseUrl.trim() ||
+      !['openai.com', 'anthropic.com', 'googleapis.com'].some(domain =>
+        baseUrl.includes(domain)
+      ));
 
   const handleTemplateClick = (template: (typeof PROVIDER_TEMPLATES)[number]) => {
     setName(template.name);
@@ -53,6 +62,7 @@ export const AddProviderModal: FC<AddProviderModalProps> = ({ onClose, editingPr
             base_url: baseUrl.trim(),
             api_key: apiKey.trim() || undefined,
             default_model: defaultModel.trim(),
+            vps_url: vpsUrl.trim() || undefined,
           })
         ).unwrap();
       } else {
@@ -64,6 +74,7 @@ export const AddProviderModal: FC<AddProviderModalProps> = ({ onClose, editingPr
             api_key: apiKey.trim() || undefined,
             default_model: defaultModel.trim(),
             enabled: true,
+            vps_url: vpsUrl.trim() || undefined,
           })
         ).unwrap();
       }
@@ -140,6 +151,22 @@ export const AddProviderModal: FC<AddProviderModalProps> = ({ onClose, editingPr
               className="w-full text-sm px-3 py-2 rounded-lg border border-stone-200 focus:outline-none focus:ring-2 focus:ring-primary-300 focus:border-transparent font-mono"
             />
           </div>
+
+          {showVpsUrlField && (
+            <div>
+              <label className="block text-xs font-medium text-stone-600 mb-1">
+                VPS URL
+                <span className="ml-1 text-stone-400 font-normal">(optional)</span>
+              </label>
+              <input
+                type="text"
+                value={vpsUrl}
+                onChange={e => setVpsUrl(e.target.value)}
+                placeholder="http://your-vps:port/v1"
+                className="w-full text-sm px-3 py-2 rounded-lg border border-stone-200 focus:outline-none focus:ring-2 focus:ring-primary-300 focus:border-transparent font-mono"
+              />
+            </div>
+          )}
 
           <div>
             <label className="block text-xs font-medium text-stone-600 mb-1">

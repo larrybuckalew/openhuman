@@ -1,4 +1,4 @@
-import { type FC } from 'react';
+import { type FC, useState } from 'react';
 
 import { createConversation, setActiveConversation } from '../../store/aiOsSlice';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
@@ -22,6 +22,17 @@ export const ProviderSidebar: FC<ProviderSidebarProps> = ({
 }) => {
   const dispatch = useAppDispatch();
   const sendingMessage = useAppSelector(s => s.aiOs.sendingMessage);
+
+  // Tracks active endpoint preference per provider: 'local' | 'vps'
+  const [endpointPrefs, setEndpointPrefs] = useState<Map<string, 'local' | 'vps'>>(new Map());
+
+  const toggleEndpoint = (providerId: string) => {
+    setEndpointPrefs(prev => {
+      const next = new Map(prev);
+      next.set(providerId, prev.get(providerId) === 'vps' ? 'local' : 'vps');
+      return next;
+    });
+  };
 
   const handleNewConversation = (provider: UserProvider) => {
     void dispatch(createConversation({ provider_id: provider.id, model: provider.default_model }));
@@ -56,17 +67,49 @@ export const ProviderSidebar: FC<ProviderSidebarProps> = ({
             </div>
           ) : (
             <div className="space-y-2">
-              {providers.map(p => (
-                <div key={p.id}>
-                  <ProviderCard provider={p} onEdit={onEditProvider} />
-                  <button
-                    onClick={() => handleNewConversation(p)}
-                    disabled={sendingMessage}
-                    className="mt-1 w-full text-[11px] py-1 rounded-md bg-stone-100 hover:bg-primary-50 text-stone-500 hover:text-primary-600 transition-colors disabled:opacity-50">
-                    + New chat
-                  </button>
-                </div>
-              ))}
+              {providers.map(p => {
+                const activeEndpoint = endpointPrefs.get(p.id) ?? 'local';
+                return (
+                  <div key={p.id}>
+                    <ProviderCard provider={p} onEdit={onEditProvider} />
+                    {p.vps_url && (
+                      <div className="mt-1 flex items-center gap-1">
+                        <button
+                          onClick={() => toggleEndpoint(p.id)}
+                          className={`flex items-center rounded-full border text-[10px] font-medium overflow-hidden transition-colors ${
+                            activeEndpoint === 'local'
+                              ? 'border-stone-300'
+                              : 'border-primary-400'
+                          }`}
+                          title={`Switch to ${activeEndpoint === 'local' ? 'VPS' : 'Local'} endpoint`}>
+                          <span
+                            className={`px-2 py-0.5 transition-colors ${
+                              activeEndpoint === 'local'
+                                ? 'bg-stone-200 text-stone-700'
+                                : 'bg-white text-stone-400'
+                            }`}>
+                            Local
+                          </span>
+                          <span
+                            className={`px-2 py-0.5 transition-colors ${
+                              activeEndpoint === 'vps'
+                                ? 'bg-primary-500 text-white'
+                                : 'bg-white text-stone-400'
+                            }`}>
+                            VPS
+                          </span>
+                        </button>
+                      </div>
+                    )}
+                    <button
+                      onClick={() => handleNewConversation(p)}
+                      disabled={sendingMessage}
+                      className="mt-1 w-full text-[11px] py-1 rounded-md bg-stone-100 hover:bg-primary-50 text-stone-500 hover:text-primary-600 transition-colors disabled:opacity-50">
+                      + New chat
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>
