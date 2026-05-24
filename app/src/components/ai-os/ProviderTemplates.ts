@@ -1,0 +1,68 @@
+import type { ProviderTemplate } from '../../types/aiOs';
+
+export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
+  {
+    name: 'OpenRouter',
+    kind: 'openai_compatible',
+    base_url: 'https://openrouter.ai/api/v1',
+    default_model: 'openai/gpt-4o',
+    description: 'Access hundreds of models via a single API',
+    requires_api_key: true,
+  },
+  {
+    name: 'Anthropic',
+    kind: 'anthropic',
+    base_url: 'https://api.anthropic.com/v1',
+    default_model: 'claude-sonnet-4-6',
+    description: 'Claude models directly from Anthropic',
+    requires_api_key: true,
+  },
+  {
+    name: 'OpenAI',
+    kind: 'openai_compatible',
+    base_url: 'https://api.openai.com/v1',
+    default_model: 'gpt-4o',
+    description: 'GPT-4o and other OpenAI models',
+    requires_api_key: true,
+  },
+  {
+    name: 'Google Gemini',
+    kind: 'google',
+    base_url: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    default_model: 'gemini-2.0-flash',
+    description: 'Gemini models from Google',
+    requires_api_key: true,
+  },
+  {
+    name: 'Ollama Local',
+    kind: 'openai_compatible',
+    base_url: 'http://localhost:11434/v1',
+    default_model: 'llama3.2',
+    description: 'Run models locally with Ollama',
+    requires_api_key: false,
+  },
+  {
+    name: 'Kilocode',
+    kind: 'openai_compatible',
+    base_url: 'http://localhost:11434/v1',
+    default_model: 'qwen2.5-coder',
+    description: 'Code-specialized local model',
+    requires_api_key: false,
+  },
+  {
+    name: 'Hermès',
+    kind: 'openai_compatible',
+    base_url: '',
+    default_model: '',
+    description: 'Custom OpenAI-compatible endpoint',
+    requires_api_key: false,
+  },
+  {
+    name: 'Openclaw',
+    kind: 'openai_compatible',
+    base_url: '',
+    default_model: '',
+    description: 'Custom OpenAI-compatible endpoint',
+    requires_api_key: false,
+  },
+];

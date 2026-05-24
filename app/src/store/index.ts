@@ -13,6 +13,7 @@ import {
 
 import { IS_DEV } from '../utils/config';
 import accountsReducer from './accountsSlice';
+import aiOsReducer from './aiOsSlice';
 import channelConnectionsReducer from './channelConnectionsSlice';
 import chatRuntimeReducer from './chatRuntimeSlice';
 import coreModeReducer from './coreModeSlice';
@@ -121,6 +122,7 @@ export const store = configureStore({
     providerSurfaces: providerSurfacesReducer,
     coreMode: persistedCoreModeReducer,
     mascot: persistedMascotReducer,
+    aiOs: aiOsReducer,
   },
   middleware: getDefaultMiddleware => {
     const middleware = getDefaultMiddleware({
