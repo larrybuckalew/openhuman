@@ -60,12 +60,15 @@ fn param_i64_opt(params: &Map<String, Value>, key: &str) -> Result<Option<i64>, 
 }
 
 fn parse_provider_kind(s: &str) -> Result<ProviderKind, String> {
+    // Accept the canonical wire form (`openai_compatible`) and the
+    // legacy snake_case form (`open_ai_compatible`) so rows written by
+    // earlier builds round-trip cleanly during the rename migration.
     match s {
-        "open_ai_compatible" => Ok(ProviderKind::OpenAiCompatible),
+        "openai_compatible" | "open_ai_compatible" => Ok(ProviderKind::OpenAiCompatible),
         "anthropic" => Ok(ProviderKind::Anthropic),
         "google" => Ok(ProviderKind::Google),
         other => Err(format!(
-            "unknown provider kind '{other}'; expected open_ai_compatible, anthropic, or google"
+            "unknown provider kind '{other}'; expected openai_compatible, anthropic, or google"
         )),
     }
 }

@@ -63,13 +63,81 @@ pub fn ensure_tables(conn: &Connection) -> rusqlite::Result<()> {
         conn.execute_batch("ALTER TABLE ai_os_providers ADD COLUMN vps_url TEXT;")?;
     }
 
+    // Migration: rename legacy `open_ai_compatible` provider kind to the
+    // canonical `openai_compatible` wire token. Idempotent: no-op once
+    // rows already use the new value.
+    let legacy_kind_count: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM ai_os_providers WHERE kind = 'open_ai_compatible'",
+        [],
+        |row| row.get(0),
+    )?;
+    if legacy_kind_count > 0 {
+        tracing::debug!(
+            count = legacy_kind_count,
+            "[ai_os][store] migrating provider kind: open_ai_compatible -> openai_compatible"
+        );
+        conn.execute(
+            "UPDATE ai_os_providers SET kind = 'openai_compatible' WHERE kind = 'open_ai_compatible'",
+            [],
+        )?;
+    }
+
+    // FTS5 index for message content. Standalone (non-external) virtual
+    // table — duplicates content for O(log n) full-text lookups, kept in
+    // sync via triggers on `ai_os_messages`.
+    conn.execute_batch(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS ai_os_messages_fts USING fts5(
+             content,
+             message_id UNINDEXED,
+             conversation_id UNINDEXED,
+             tokenize = 'porter unicode61'
+         );
+
+         CREATE TRIGGER IF NOT EXISTS ai_os_messages_fts_ai
+             AFTER INSERT ON ai_os_messages BEGIN
+                 INSERT INTO ai_os_messages_fts (content, message_id, conversation_id)
+                 VALUES (new.content, new.id, new.conversation_id);
+             END;
+
+         CREATE TRIGGER IF NOT EXISTS ai_os_messages_fts_ad
+             AFTER DELETE ON ai_os_messages BEGIN
+                 DELETE FROM ai_os_messages_fts WHERE message_id = old.id;
+             END;
+
+         CREATE TRIGGER IF NOT EXISTS ai_os_messages_fts_au
+             AFTER UPDATE ON ai_os_messages BEGIN
+                 DELETE FROM ai_os_messages_fts WHERE message_id = old.id;
+                 INSERT INTO ai_os_messages_fts (content, message_id, conversation_id)
+                 VALUES (new.content, new.id, new.conversation_id);
+             END;",
+    )?;
+
+    // One-time backfill: if FTS is empty but `ai_os_messages` has rows, populate.
+    let fts_count: i64 =
+        conn.query_row("SELECT COUNT(*) FROM ai_os_messages_fts", [], |row| {
+            row.get(0)
+        })?;
+    let msg_count: i64 =
+        conn.query_row("SELECT COUNT(*) FROM ai_os_messages", [], |row| row.get(0))?;
+    if fts_count == 0 && msg_count > 0 {
+        tracing::debug!(
+            count = msg_count,
+            "[ai_os][store] backfilling ai_os_messages_fts from existing messages"
+        );
+        conn.execute(
+            "INSERT INTO ai_os_messages_fts (content, message_id, conversation_id)
+             SELECT content, id, conversation_id FROM ai_os_messages",
+            [],
+        )?;
+    }
+
     Ok(())
 }
 
 // ─── provider ops ───────────────────────────────────────────────────────────
 
 pub fn provider_upsert(conn: &Connection, p: &UserProvider) -> rusqlite::Result<()> {
-    let kind = serde_json::to_string(&p.kind).unwrap_or_else(|_| "\"open_ai_compatible\"".into());
+    let kind = serde_json::to_string(&p.kind).unwrap_or_else(|_| "\"openai_compatible\"".into());
     // strip surrounding quotes that serde adds for string enums
     let kind = kind.trim_matches('"').to_string();
 
@@ -254,19 +322,53 @@ pub fn conversation_search(
     query: &str,
     limit: usize,
 ) -> rusqlite::Result<Vec<AiConversation>> {
-    let pattern = format!("%{}%", query);
+    // Empty / whitespace-only queries return no matches rather than
+    // matching everything — `LIKE '%%'` would have, but that's a footgun.
+    let trimmed = query.trim();
+    if trimmed.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let title_pattern = format!("%{}%", trimmed);
+    let fts_query = escape_fts5_query(trimmed);
+
+    // Title matches with LIKE (titles are short, FTS overhead isn't worth it).
+    // Body matches with FTS5 MATCH for index-backed lookup. UNION via OR
+    // against an `IN (SELECT …)` keeps the planner happy and avoids a
+    // cross-product LEFT JOIN over the whole messages table.
     let mut stmt = conn.prepare(
         "SELECT DISTINCT c.id, c.title, c.provider_id, c.model, c.created_at, c.updated_at
          FROM ai_os_conversations c
-         LEFT JOIN ai_os_messages m ON m.conversation_id = c.id
-         WHERE c.title LIKE ?1 OR m.content LIKE ?1
+         WHERE c.title LIKE ?1
+            OR c.id IN (
+                SELECT DISTINCT conversation_id
+                FROM ai_os_messages_fts
+                WHERE ai_os_messages_fts MATCH ?2
+            )
          ORDER BY c.updated_at DESC
-         LIMIT ?2",
+         LIMIT ?3",
     )?;
     let rows = stmt
-        .query_map(params![pattern, limit as i64], row_to_conversation)?
+        .query_map(
+            params![title_pattern, fts_query, limit as i64],
+            row_to_conversation,
+        )?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(rows)
+}
+
+/// Escape a free-text user query for safe use as an FTS5 MATCH expression.
+///
+/// FTS5 query syntax treats `"`, `(`, `)`, `*`, `-`, `+`, `:`, `^`, `NEAR`,
+/// `AND`, `OR`, `NOT` as operators or column qualifiers. Wrapping each
+/// whitespace-delimited token in double quotes (with inner `"` doubled per
+/// FTS5 string literal rules) renders the query as a plain phrase/term
+/// search regardless of what the user typed.
+fn escape_fts5_query(q: &str) -> String {
+    q.split_whitespace()
+        .map(|token| format!("\"{}\"", token.replace('"', "\"\"")))
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 pub fn conversation_delete(conn: &Connection, id: &str) -> rusqlite::Result<()> {
@@ -391,4 +493,238 @@ pub fn with_connection<T>(config: &Config, f: impl FnOnce(&Connection) -> Result
     ensure_tables(&conn).with_context(|| "[ai_os] failed to initialize schema")?;
 
     f(&conn)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::openhuman::ai_os::types::ProviderKind;
+
+    fn fresh_conn() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        ensure_tables(&conn).unwrap();
+        conn
+    }
+
+    fn make_provider(id: &str, kind: ProviderKind) -> UserProvider {
+        UserProvider {
+            id: id.into(),
+            name: format!("p-{id}"),
+            kind,
+            base_url: "https://example.com".into(),
+            api_key: None,
+            default_model: "m".into(),
+            enabled: true,
+            created_at: 0,
+            updated_at: 0,
+            vps_url: None,
+        }
+    }
+
+    fn make_conv(id: &str, provider_id: &str, title: &str) -> AiConversation {
+        AiConversation {
+            id: id.into(),
+            title: title.into(),
+            provider_id: provider_id.into(),
+            model: "m".into(),
+            created_at: 0,
+            updated_at: 0,
+        }
+    }
+
+    fn make_msg(id: &str, conv_id: &str, content: &str) -> AiMessage {
+        AiMessage {
+            id: id.into(),
+            conversation_id: conv_id.into(),
+            role: "user".into(),
+            content: content.into(),
+            input_tokens: 0,
+            output_tokens: 0,
+            cost_usd: 0.0,
+            created_at: 0,
+        }
+    }
+
+    #[test]
+    fn ensure_tables_creates_fts_virtual_table() {
+        let conn = fresh_conn();
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master \
+                 WHERE type = 'table' AND name = 'ai_os_messages_fts'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1, "FTS5 virtual table must be created");
+    }
+
+    #[test]
+    fn provider_kind_round_trips_through_store() {
+        let conn = fresh_conn();
+        provider_upsert(&conn, &make_provider("p1", ProviderKind::OpenAiCompatible)).unwrap();
+        provider_upsert(&conn, &make_provider("p2", ProviderKind::Anthropic)).unwrap();
+        provider_upsert(&conn, &make_provider("p3", ProviderKind::Google)).unwrap();
+
+        let p1 = provider_get(&conn, "p1").unwrap().unwrap();
+        let p2 = provider_get(&conn, "p2").unwrap().unwrap();
+        let p3 = provider_get(&conn, "p3").unwrap().unwrap();
+
+        assert_eq!(p1.kind, ProviderKind::OpenAiCompatible);
+        assert_eq!(p2.kind, ProviderKind::Anthropic);
+        assert_eq!(p3.kind, ProviderKind::Google);
+
+        // Stored kind value must be the canonical wire token.
+        let raw_kind: String = conn
+            .query_row(
+                "SELECT kind FROM ai_os_providers WHERE id = 'p1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(raw_kind, "openai_compatible");
+    }
+
+    #[test]
+    fn legacy_provider_kind_is_migrated() {
+        let conn = fresh_conn();
+
+        // Seed a row written by an older build that used the
+        // `open_ai_compatible` wire form.
+        conn.execute(
+            "INSERT INTO ai_os_providers
+                (id, name, kind, base_url, default_model, enabled, created_at, updated_at)
+             VALUES ('legacy', 'old', 'open_ai_compatible', '', 'm', 1, 0, 0)",
+            [],
+        )
+        .unwrap();
+
+        // Re-run ensure_tables — migration should rewrite the row.
+        ensure_tables(&conn).unwrap();
+
+        let kind: String = conn
+            .query_row(
+                "SELECT kind FROM ai_os_providers WHERE id = 'legacy'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(kind, "openai_compatible");
+
+        let loaded = provider_get(&conn, "legacy").unwrap().unwrap();
+        assert_eq!(loaded.kind, ProviderKind::OpenAiCompatible);
+    }
+
+    #[test]
+    fn conversation_search_finds_match_by_message_content_via_fts() {
+        let conn = fresh_conn();
+        provider_upsert(&conn, &make_provider("p", ProviderKind::OpenAiCompatible)).unwrap();
+        conversation_upsert(&conn, &make_conv("c1", "p", "Untitled")).unwrap();
+        conversation_upsert(&conn, &make_conv("c2", "p", "Untitled")).unwrap();
+        message_insert(&conn, &make_msg("m1", "c1", "tell me about rust ownership")).unwrap();
+        message_insert(&conn, &make_msg("m2", "c2", "completely unrelated text")).unwrap();
+
+        let hits = conversation_search(&conn, "ownership", 10).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].id, "c1");
+    }
+
+    #[test]
+    fn conversation_search_finds_match_by_title() {
+        let conn = fresh_conn();
+        provider_upsert(&conn, &make_provider("p", ProviderKind::OpenAiCompatible)).unwrap();
+        conversation_upsert(&conn, &make_conv("c1", "p", "Rust deep dive")).unwrap();
+        conversation_upsert(&conn, &make_conv("c2", "p", "Python basics")).unwrap();
+
+        let hits = conversation_search(&conn, "Rust", 10).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].id, "c1");
+    }
+
+    #[test]
+    fn conversation_search_empty_query_returns_nothing() {
+        let conn = fresh_conn();
+        provider_upsert(&conn, &make_provider("p", ProviderKind::OpenAiCompatible)).unwrap();
+        conversation_upsert(&conn, &make_conv("c1", "p", "anything")).unwrap();
+
+        assert!(conversation_search(&conn, "", 10).unwrap().is_empty());
+        assert!(conversation_search(&conn, "   ", 10).unwrap().is_empty());
+    }
+
+    #[test]
+    fn conversation_search_tolerates_fts_operator_chars() {
+        // Inputs containing characters that FTS5 would otherwise interpret
+        // as operators (quotes, parens, colons, stars, NEAR, AND, OR, NOT)
+        // must not error — escape_fts5_query wraps each token as a literal.
+        let conn = fresh_conn();
+        provider_upsert(&conn, &make_provider("p", ProviderKind::OpenAiCompatible)).unwrap();
+        conversation_upsert(&conn, &make_conv("c1", "p", "t")).unwrap();
+        message_insert(&conn, &make_msg("m1", "c1", "alpha beta gamma")).unwrap();
+
+        for q in ["alpha AND beta", "\"hello\"", "foo*bar", "x:y", "(a OR b)"] {
+            // Should return successfully, even if no hits.
+            let _ = conversation_search(&conn, q, 10).unwrap();
+        }
+    }
+
+    #[test]
+    fn fts_trigger_keeps_index_in_sync_on_delete() {
+        let conn = fresh_conn();
+        provider_upsert(&conn, &make_provider("p", ProviderKind::OpenAiCompatible)).unwrap();
+        conversation_upsert(&conn, &make_conv("c1", "p", "t")).unwrap();
+        message_insert(&conn, &make_msg("m1", "c1", "unique_phrase_for_search")).unwrap();
+
+        assert_eq!(
+            conversation_search(&conn, "unique_phrase_for_search", 10)
+                .unwrap()
+                .len(),
+            1
+        );
+
+        conversation_delete(&conn, "c1").unwrap();
+
+        assert_eq!(
+            conversation_search(&conn, "unique_phrase_for_search", 10)
+                .unwrap()
+                .len(),
+            0
+        );
+    }
+
+    #[test]
+    fn fts_backfill_populates_from_pre_existing_messages() {
+        // Simulate a DB written by an older build that lacked FTS5: create
+        // the base tables manually, insert a message, then run
+        // `ensure_tables` and confirm the backfill copies the row.
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE ai_os_providers (
+                 id TEXT PRIMARY KEY, name TEXT, kind TEXT, base_url TEXT,
+                 api_key TEXT, default_model TEXT, enabled INTEGER,
+                 created_at INTEGER, updated_at INTEGER
+             );
+             CREATE TABLE ai_os_conversations (
+                 id TEXT PRIMARY KEY, title TEXT, provider_id TEXT, model TEXT,
+                 created_at INTEGER, updated_at INTEGER
+             );
+             CREATE TABLE ai_os_messages (
+                 id TEXT PRIMARY KEY, conversation_id TEXT, role TEXT,
+                 content TEXT, input_tokens INTEGER, output_tokens INTEGER,
+                 cost_usd REAL, created_at INTEGER
+             );
+             INSERT INTO ai_os_providers
+                 VALUES ('p', 'name', 'openai_compatible', '', NULL, 'm', 1, 0, 0);
+             INSERT INTO ai_os_conversations
+                 VALUES ('c', 't', 'p', 'm', 0, 0);
+             INSERT INTO ai_os_messages
+                 VALUES ('m', 'c', 'user', 'preexisting backfill marker', 0, 0, 0.0, 0);",
+        )
+        .unwrap();
+
+        ensure_tables(&conn).unwrap();
+
+        let hits = conversation_search(&conn, "backfill", 10).unwrap();
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].id, "c");
+    }
 }
