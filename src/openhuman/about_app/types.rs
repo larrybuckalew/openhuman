@@ -24,10 +24,12 @@ pub enum CapabilityCategory {
     Channels,
     #[serde(rename = "automation")]
     Automation,
+    #[serde(rename = "ai_os")]
+    AiOs,
 }
 
 impl CapabilityCategory {
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 11] = [
         Self::Conversation,
         Self::Intelligence,
         Self::Skills,
@@ -38,6 +40,7 @@ impl CapabilityCategory {
         Self::ScreenIntelligence,
         Self::Channels,
         Self::Automation,
+        Self::AiOs,
     ];
 
     pub const fn as_str(self) -> &'static str {
@@ -52,6 +55,7 @@ impl CapabilityCategory {
             Self::ScreenIntelligence => "screen_intelligence",
             Self::Channels => "channels",
             Self::Automation => "automation",
+            Self::AiOs => "ai_os",
         }
     }
 }
@@ -74,6 +78,7 @@ impl FromStr for CapabilityCategory {
             }
             "channels" => Ok(Self::Channels),
             "automation" => Ok(Self::Automation),
+            "ai_os" | "ai-os" | "aios" => Ok(Self::AiOs),
             _ => Err(format!(
                 "unknown capability category '{value}'; expected one of: {}",
                 Self::ALL
@@ -179,8 +184,8 @@ mod tests {
     }
 
     #[test]
-    fn category_all_has_10_variants() {
-        assert_eq!(CapabilityCategory::ALL.len(), 10);
+    fn category_all_has_11_variants() {
+        assert_eq!(CapabilityCategory::ALL.len(), 11);
     }
 
     #[test]

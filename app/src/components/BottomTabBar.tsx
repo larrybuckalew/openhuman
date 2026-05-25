@@ -115,6 +115,21 @@ const tabs = [
     ),
   },
   {
+    id: 'ai-os',
+    label: 'AI OS',
+    path: '/ai-os',
+    icon: (
+      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          strokeWidth={1.8}
+          d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15M14.25 3.104c.251.023.501.05.75.082M19.8 15a2.25 2.25 0 01.659 1.591v1.659a2.25 2.25 0 01-2.25 2.25H5.75a2.25 2.25 0 01-2.25-2.25v-1.659c0-.597.237-1.17.659-1.591L5 14.5m14.8.5l-3.197-3.197a4.5 4.5 0 00-6.361-.126M5 14.5l3.197-3.19a4.5 4.5 0 016.233-.203"
+        />
+      </svg>
+    ),
+  },
+  {
     id: 'settings',
     label: 'Settings',
     path: '/settings',

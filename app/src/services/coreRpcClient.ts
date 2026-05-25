@@ -259,7 +259,7 @@ export async function getCoreRpcUrl(): Promise<string> {
  *   3. `null` in non-Tauri environments (e.g. Vitest, web preview) when no
  *      stored token is set so existing tests remain unaffected.
  */
-async function getCoreRpcToken(): Promise<string | null> {
+export async function getCoreRpcToken(): Promise<string | null> {
   if (didResolveCoreRpcToken) return resolvedCoreRpcToken;
 
   const storedToken = getStoredCoreToken();
