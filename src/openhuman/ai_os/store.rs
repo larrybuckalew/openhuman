@@ -113,10 +113,9 @@ pub fn ensure_tables(conn: &Connection) -> rusqlite::Result<()> {
     )?;
 
     // One-time backfill: if FTS is empty but `ai_os_messages` has rows, populate.
-    let fts_count: i64 =
-        conn.query_row("SELECT COUNT(*) FROM ai_os_messages_fts", [], |row| {
-            row.get(0)
-        })?;
+    let fts_count: i64 = conn.query_row("SELECT COUNT(*) FROM ai_os_messages_fts", [], |row| {
+        row.get(0)
+    })?;
     let msg_count: i64 =
         conn.query_row("SELECT COUNT(*) FROM ai_os_messages", [], |row| row.get(0))?;
     if fts_count == 0 && msg_count > 0 {
@@ -146,7 +145,9 @@ pub fn provider_upsert(conn: &Connection, p: &UserProvider) -> rusqlite::Result<
     let encrypted_api_key: Option<String> = match &p.api_key {
         Some(key) if !key.is_empty() => {
             let enc = super::key::encrypt_api_key(key).map_err(|e| {
-                rusqlite::Error::ToSqlConversionFailure(Box::<dyn std::error::Error + Send + Sync>::from(e))
+                rusqlite::Error::ToSqlConversionFailure(
+                    Box::<dyn std::error::Error + Send + Sync>::from(e),
+                )
             })?;
             tracing::debug!("[ai_os][store] encrypted api_key for provider {}", p.id);
             Some(enc)

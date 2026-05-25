@@ -32,9 +32,7 @@ export const AddProviderModal: FC<AddProviderModalProps> = ({ onClose, editingPr
     kind === 'openai_compatible' &&
     (isDualEndpoint ||
       !baseUrl.trim() ||
-      !['openai.com', 'anthropic.com', 'googleapis.com'].some(domain =>
-        baseUrl.includes(domain)
-      ));
+      !['openai.com', 'anthropic.com', 'googleapis.com'].some(domain => baseUrl.includes(domain)));
 
   const handleTemplateClick = (template: (typeof PROVIDER_TEMPLATES)[number]) => {
     setName(template.name);
@@ -61,7 +59,7 @@ export const AddProviderModal: FC<AddProviderModalProps> = ({ onClose, editingPr
             name: name.trim(),
             kind,
             base_url: baseUrl.trim(),
-            api_key: keyChanged ? (apiKey.trim() || undefined) : undefined,
+            api_key: keyChanged ? apiKey.trim() || undefined : undefined,
             default_model: defaultModel.trim(),
             vps_url: vpsUrl.trim() || undefined,
           })

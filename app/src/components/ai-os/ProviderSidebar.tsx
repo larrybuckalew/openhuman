@@ -114,9 +114,7 @@ export const ProviderSidebar: FC<ProviderSidebarProps> = ({
                         <button
                           onClick={() => toggleEndpoint(p.id)}
                           className={`flex items-center rounded-full border text-[10px] font-medium overflow-hidden transition-colors ${
-                            activeEndpoint === 'local'
-                              ? 'border-stone-300'
-                              : 'border-primary-400'
+                            activeEndpoint === 'local' ? 'border-stone-300' : 'border-primary-400'
                           }`}
                           title={`Switch to ${activeEndpoint === 'local' ? 'VPS' : 'Local'} endpoint`}>
                           <span
@@ -204,7 +202,8 @@ export const ProviderSidebar: FC<ProviderSidebarProps> = ({
                   </p>
                 ) : (
                   searchResults.map(c => {
-                    const providerName = providers.find(p => p.id === c.provider_id)?.name ?? c.provider_id;
+                    const providerName =
+                      providers.find(p => p.id === c.provider_id)?.name ?? c.provider_id;
                     return (
                       <button
                         key={c.id}

@@ -23,9 +23,7 @@ use uuid::Uuid;
 
 use crate::core::types::AppState;
 use crate::openhuman::providers::compatible::{AuthStyle, OpenAiCompatibleProvider};
-use crate::openhuman::providers::traits::{
-    ChatMessage, Provider, StreamOptions,
-};
+use crate::openhuman::providers::traits::{ChatMessage, Provider, StreamOptions};
 
 use super::store;
 use super::types::{AiMessage, ProviderKind};
@@ -114,9 +112,7 @@ pub async fn stream_handler(
     let load_result = store::with_connection(&config, |conn| {
         let conv = store::conversation_get(conn, &req.conversation_id)
             .map_err(|e| anyhow::anyhow!("conversation_get: {e}"))?
-            .ok_or_else(|| {
-                anyhow::anyhow!("conversation not found: {}", req.conversation_id)
-            })?;
+            .ok_or_else(|| anyhow::anyhow!("conversation not found: {}", req.conversation_id))?;
         let provider = store::provider_get(conn, &conv.provider_id)
             .map_err(|e| anyhow::anyhow!("provider_get: {e}"))?
             .ok_or_else(|| anyhow::anyhow!("provider not found: {}", conv.provider_id))?;
@@ -131,9 +127,7 @@ pub async fn stream_handler(
             let msg = e.to_string();
             tracing::error!("[ai_os][stream] load failed: {msg}");
             let stream = futures_util::stream::once(async move {
-                Ok::<Event, std::convert::Infallible>(
-                    Event::default().event("error").data(msg),
-                )
+                Ok::<Event, std::convert::Infallible>(Event::default().event("error").data(msg))
             });
             return Sse::new(stream)
                 .keep_alive(KeepAlive::new().interval(Duration::from_secs(10)))
@@ -202,8 +196,7 @@ pub async fn stream_handler(
     );
 
     // ── real-time streaming via channel ──────────────────────────────────────
-    let (tx, rx) =
-        tokio::sync::mpsc::channel::<Result<Event, std::convert::Infallible>>(64);
+    let (tx, rx) = tokio::sync::mpsc::channel::<Result<Event, std::convert::Infallible>>(64);
 
     tokio::spawn(async move {
         let mut chunk_stream =
@@ -224,9 +217,7 @@ pub async fn stream_handler(
                             "[ai_os][stream] chunk delta"
                         );
                         full_text.push_str(&chunk.delta);
-                        let event = Event::default()
-                            .event("delta")
-                            .data(chunk.delta.clone());
+                        let event = Event::default().event("delta").data(chunk.delta.clone());
                         if tx.send(Ok(event)).await.is_err() {
                             // Client disconnected — stop streaming.
                             tracing::debug!("[ai_os][stream] client disconnected mid-stream");

@@ -40,7 +40,11 @@ struct OllamaTagsResponse {
 fn is_ollama(provider: &UserProvider) -> bool {
     let url_lower = provider.base_url.to_lowercase();
     let has_local = url_lower.contains("localhost") || url_lower.contains("127.0.0.1");
-    let has_no_key = provider.api_key.as_deref().map(|k| k.is_empty()).unwrap_or(true);
+    let has_no_key = provider
+        .api_key
+        .as_deref()
+        .map(|k| k.is_empty())
+        .unwrap_or(true);
     has_local && has_no_key
 }
 
@@ -148,9 +152,7 @@ pub async fn list_models(provider: &UserProvider) -> Vec<ModelInfo> {
             );
             google_models()
         }
-        ProviderKind::OpenAiCompatible => {
-            fetch_openai_compatible_models(provider).await
-        }
+        ProviderKind::OpenAiCompatible => fetch_openai_compatible_models(provider).await,
     }
 }
 
@@ -304,7 +306,8 @@ async fn fetch_ollama_models(client: &reqwest::Client, provider: &UserProvider) 
         .into_iter()
         .map(|m| {
             // Strip ":latest" (or any tag) for a cleaner display name
-            let display_name = m.name
+            let display_name = m
+                .name
                 .split_once(':')
                 .map(|(base, _tag)| base.to_string())
                 .unwrap_or_else(|| m.name.clone());

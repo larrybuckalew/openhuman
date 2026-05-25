@@ -3,7 +3,13 @@ import debug from 'debug';
 
 import * as aiOsService from '../services/aiOsService';
 import type { AddProviderParams, UpdateProviderParams } from '../services/aiOsService';
-import type { AiConversation, AiMessage, ModelInfo, UsageSummary, UserProvider } from '../types/aiOs';
+import type {
+  AiConversation,
+  AiMessage,
+  ModelInfo,
+  UsageSummary,
+  UserProvider,
+} from '../types/aiOs';
 import type { AppDispatch } from './index';
 import { resetUserScopedState } from './resetActions';
 
@@ -174,13 +180,10 @@ export const fetchUsage = createAsyncThunk('aiOs/fetchUsage', async (days?: numb
   return aiOsService.getUsage(days);
 });
 
-export const fetchModels = createAsyncThunk(
-  'aiOs/fetchModels',
-  async (providerId: string) => {
-    log('fetchModels providerId=%s', providerId);
-    return aiOsService.listModels(providerId);
-  }
-);
+export const fetchModels = createAsyncThunk('aiOs/fetchModels', async (providerId: string) => {
+  log('fetchModels providerId=%s', providerId);
+  return aiOsService.listModels(providerId);
+});
 
 export const searchConversations = createAsyncThunk(
   'aiOs/searchConversations',
@@ -206,10 +209,7 @@ const aiOsSlice = createSlice({
      * When `chunk` is an empty string (first dispatch), it resets the buffer
      * and sets `streamingConversationId` so the UI knows streaming has begun.
      */
-    setStreamingChunk(
-      state,
-      action: PayloadAction<{ conversationId: string; chunk: string }>
-    ) {
+    setStreamingChunk(state, action: PayloadAction<{ conversationId: string; chunk: string }>) {
       const { conversationId, chunk } = action.payload;
       if (!chunk) {
         // Empty chunk signals stream start — reset buffer and bind conversation.

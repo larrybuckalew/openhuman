@@ -1,10 +1,6 @@
 import { type FC, useEffect } from 'react';
 
-import {
-  fetchModels,
-  selectModelsForProvider,
-  selectModelsStatus,
-} from '../../store/aiOsSlice';
+import { fetchModels, selectModelsForProvider, selectModelsStatus } from '../../store/aiOsSlice';
 import { useAppDispatch, useAppSelector } from '../../store/hooks';
 
 interface ModelPickerProps {

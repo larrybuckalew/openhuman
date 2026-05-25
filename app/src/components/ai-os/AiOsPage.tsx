@@ -68,9 +68,10 @@ export const AiOsPage: FC = () => {
 
   const handleSend = (content: string) => {
     if (!activeConversationId) return;
-    const modelOverride = selectedModel && activeConversation && selectedModel !== activeConversation.model
-      ? selectedModel
-      : undefined;
+    const modelOverride =
+      selectedModel && activeConversation && selectedModel !== activeConversation.model
+        ? selectedModel
+        : undefined;
     void dispatch(
       streamMessage({ conversation_id: activeConversationId, content, model: modelOverride })
     );

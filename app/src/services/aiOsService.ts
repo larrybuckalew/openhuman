@@ -1,6 +1,12 @@
 import debug from 'debug';
 
-import type { AiConversation, AiMessage, ModelInfo, UsageSummary, UserProvider } from '../types/aiOs';
+import type {
+  AiConversation,
+  AiMessage,
+  ModelInfo,
+  UsageSummary,
+  UserProvider,
+} from '../types/aiOs';
 import { callCoreRpc, getCoreHttpBaseUrl, getCoreRpcToken } from './coreRpcClient';
 
 const log = debug('ai-os:service');
@@ -123,7 +129,9 @@ export async function sendMessage(
   });
 }
 
-export async function listModels(providerId: string): Promise<{ models: ModelInfo[]; provider_id: string }> {
+export async function listModels(
+  providerId: string
+): Promise<{ models: ModelInfo[]; provider_id: string }> {
   log('listModels providerId=%s', providerId);
   return callCoreRpc<{ models: ModelInfo[]; provider_id: string }>({
     method: 'openhuman.ai_os_models_list',
