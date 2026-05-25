@@ -224,16 +224,25 @@ export async function streamChat(
 
   const processEvent = (rawBlock: string) => {
     // Each SSE block is a set of lines; extract `event:` and `data:` values.
+    // Per SSE spec, strip exactly one leading space from data values.
+    // Multiple data: lines are concatenated with newlines.
     let eventName = '';
-    let dataLine = '';
+    let dataLine: string | null = null;
     for (const line of rawBlock.split('\n')) {
       if (line.startsWith('event:')) {
         eventName = line.slice('event:'.length).trim();
       } else if (line.startsWith('data:')) {
-        dataLine = line.slice('data:'.length).trim();
+        // Strip exactly one leading space per SSE spec.
+        const value = line.startsWith('data: ') ? line.slice(6) : line.slice(5);
+        dataLine = dataLine !== null ? dataLine + '\n' + value : value;
       }
     }
-    if (!eventName || !dataLine) return;
+    if (!eventName || dataLine === null) return;
+
+    if (eventName === 'error') {
+      onError(dataLine ?? 'Stream error');
+      return;
+    }
 
     if (eventName === 'delta') {
       onDelta(dataLine);
@@ -249,6 +258,10 @@ export async function streamChat(
         log('streamChat failed to parse done payload: %s', dataLine);
       }
     }
+
+    // Reset for next event.
+    eventName = '';
+    dataLine = null;
   };
 
   try {

@@ -48,7 +48,22 @@ pub fn ensure_tables(conn: &Connection) -> rusqlite::Result<()> {
              ON ai_os_conversations(provider_id);
          CREATE INDEX IF NOT EXISTS idx_ai_os_messages_conversation
              ON ai_os_messages(conversation_id);",
-    )
+    )?;
+
+    // Migration: add `vps_url` column to `ai_os_providers` for existing databases.
+    // SQLite does not support `ADD COLUMN IF NOT EXISTS`, so we check via
+    // PRAGMA table_info first and skip the ALTER if the column is already present.
+    let column_exists = conn
+        .prepare("PRAGMA table_info(ai_os_providers)")?
+        .query_map([], |row| row.get::<_, String>(1))?
+        .any(|name| name.map(|n| n == "vps_url").unwrap_or(false));
+
+    if !column_exists {
+        tracing::debug!("[ai_os][store] migrating ai_os_providers: adding vps_url column");
+        conn.execute_batch("ALTER TABLE ai_os_providers ADD COLUMN vps_url TEXT;")?;
+    }
+
+    Ok(())
 }
 
 // ─── provider ops ───────────────────────────────────────────────────────────
@@ -325,7 +340,9 @@ fn row_to_message(row: &rusqlite::Row<'_>) -> rusqlite::Result<AiMessage> {
 // ─── usage aggregation ───────────────────────────────────────────────────────
 
 pub fn usage_summary(conn: &Connection, days: i64) -> rusqlite::Result<Vec<ProviderUsageSummary>> {
-    let cutoff = chrono::Utc::now().timestamp() - days * 86_400;
+    // `created_at` is stored as milliseconds since epoch; compute the cutoff
+    // in the same unit so the comparison is correct.
+    let cutoff = chrono::Utc::now().timestamp_millis() - days * 86_400 * 1_000;
     let mut stmt = conn.prepare(
         "SELECT
              p.id,
@@ -372,27 +389,6 @@ pub fn with_connection<T>(config: &Config, f: impl FnOnce(&Connection) -> Result
         .with_context(|| format!("[ai_os] failed to open DB: {}", db_path.display()))?;
 
     ensure_tables(&conn).with_context(|| "[ai_os] failed to initialize schema")?;
-    migrate_add_vps_url(&conn).with_context(|| "[ai_os] failed to run vps_url migration")?;
 
     f(&conn)
-}
-
-/// Migration: add `vps_url` column to `ai_os_providers` for existing databases.
-///
-/// SQLite does not support `ADD COLUMN IF NOT EXISTS`, so we check the
-/// current schema via `PRAGMA table_info` first and skip the ALTER if the
-/// column is already present.
-fn migrate_add_vps_url(conn: &Connection) -> rusqlite::Result<()> {
-    let column_exists = conn
-        .prepare("PRAGMA table_info(ai_os_providers)")?
-        .query_map([], |row| row.get::<_, String>(1))?
-        .any(|name| name.map(|n| n == "vps_url").unwrap_or(false));
-
-    if !column_exists {
-        tracing::debug!("[ai_os][store] migrating ai_os_providers: adding vps_url column");
-        conn.execute_batch(
-            "ALTER TABLE ai_os_providers ADD COLUMN vps_url TEXT;",
-        )?;
-    }
-    Ok(())
 }

@@ -380,7 +380,7 @@ pub async fn handle_chat_send(params: Map<String, Value>) -> Result<Value, Strin
     let model = conv.model.clone();
     let (assistant_text, usage) = super::chat::chat(&provider, messages, &model).await?;
 
-    let now = now_secs();
+    let now = now_ms();
 
     // Persist user message
     let user_ai_msg = AiMessage {
@@ -403,7 +403,7 @@ pub async fn handle_chat_send(params: Map<String, Value>) -> Result<Value, Strin
         input_tokens: usage.input_tokens as i64,
         output_tokens: usage.output_tokens as i64,
         cost_usd: usage.charged_amount_usd,
-        created_at: now + 1, // ensure ordering
+        created_at: now + 1, // ensure ordering after user message
     };
 
     let assistant_ai_msg_clone = assistant_ai_msg.clone();

@@ -1,9 +1,13 @@
 //! SSE streaming endpoint for ai_os chat.
 //!
-//! `POST /ai-os/stream` accepts a JSON body with `conversation_id` and
-//! `content`, buffers the full LLM response via `stream_chat_with_history`,
-//! then emits each chunk as an SSE `delta` event followed by a final `done`
-//! event carrying usage stats.
+//! `POST /ai-os/stream` accepts a JSON body with `conversation_id`, `content`,
+//! and an optional `model` override. Chunks are emitted in real-time via a
+//! tokio channel so the client sees tokens as they arrive.
+//!
+//! Events:
+//! - `delta`: text chunk from the assistant
+//! - `done`: final event with `{ input_tokens, output_tokens, cost_usd }`
+//! - `error`: human-readable error string (stream ends after this)
 
 use std::time::Duration;
 
@@ -14,12 +18,13 @@ use axum::Json;
 use futures_util::StreamExt;
 use serde::Deserialize;
 use serde_json::json;
+use tokio_stream::wrappers::ReceiverStream;
 use uuid::Uuid;
 
 use crate::core::types::AppState;
 use crate::openhuman::providers::compatible::{AuthStyle, OpenAiCompatibleProvider};
 use crate::openhuman::providers::traits::{
-    ChatMessage, Provider, StreamOptions, UsageInfo,
+    ChatMessage, Provider, StreamOptions,
 };
 
 use super::store;
@@ -31,15 +36,17 @@ use super::types::{AiMessage, ProviderKind};
 pub struct StreamRequest {
     pub conversation_id: String,
     pub content: String,
+    /// Optional model override; when absent, the conversation's stored model is used.
+    pub model: Option<String>,
 }
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 
-fn now_secs() -> i64 {
+fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0)
+        .unwrap_or_default()
+        .as_millis() as i64
 }
 
 fn effective_base_url(provider: &super::types::UserProvider) -> String {
@@ -69,7 +76,7 @@ fn effective_base_url(provider: &super::types::UserProvider) -> String {
 
 /// `POST /ai-os/stream`
 ///
-/// Streams an LLM chat response as Server-Sent Events.
+/// Streams an LLM chat response as Server-Sent Events in real-time.
 ///
 /// Events:
 /// - `delta`: text chunk from the assistant
@@ -81,6 +88,7 @@ pub async fn stream_handler(
 ) -> impl IntoResponse {
     tracing::debug!(
         conversation_id = %req.conversation_id,
+        model = ?req.model,
         "[ai_os][stream] stream_handler: entry"
     );
 
@@ -153,7 +161,7 @@ pub async fn stream_handler(
     });
 
     // ── persist user message immediately ────────────────────────────────────
-    let now = now_secs();
+    let now = now_ms();
     let user_ai_msg = AiMessage {
         id: user_msg_id.clone(),
         conversation_id: req.conversation_id.clone(),
@@ -173,7 +181,7 @@ pub async fn stream_handler(
         tracing::warn!("[ai_os][stream] failed to save user message: {e}");
     }
 
-    // ── build provider + collect streaming chunks ────────────────────────────
+    // ── build provider ───────────────────────────────────────────────────────
     let base_url = effective_base_url(&provider);
     let p = OpenAiCompatibleProvider::new(
         &provider.name,
@@ -182,107 +190,118 @@ pub async fn stream_handler(
         AuthStyle::Bearer,
     );
 
-    let model = conv.model.clone();
+    // Use the per-request model override if provided, otherwise fall back to
+    // the conversation's configured model.
+    let model = req.model.clone().unwrap_or_else(|| conv.model.clone());
 
     tracing::debug!(
         conversation_id = %req.conversation_id,
         model = %model,
         message_count = messages.len(),
-        "[ai_os][stream] starting stream_chat_with_history"
+        "[ai_os][stream] starting real-time stream"
     );
 
-    // Buffer all chunks (simple approach: collect before emitting SSE).
-    // This allows us to save the assistant message reliably after streaming.
-    let mut chunk_stream =
-        p.stream_chat_with_history(&messages, &model, 0.7, StreamOptions::new(true));
+    // ── real-time streaming via channel ──────────────────────────────────────
+    let (tx, rx) =
+        tokio::sync::mpsc::channel::<Result<Event, std::convert::Infallible>>(64);
 
-    let mut full_text = String::new();
-    let mut sse_events: Vec<Event> = Vec::new();
-    let mut had_error: Option<String> = None;
+    tokio::spawn(async move {
+        let mut chunk_stream =
+            p.stream_chat_with_history(&messages, &model, 0.7, StreamOptions::new(true));
 
-    while let Some(chunk_result) = chunk_stream.next().await {
-        match chunk_result {
-            Ok(chunk) => {
-                if !chunk.delta.is_empty() {
-                    tracing::trace!(
-                        delta_len = chunk.delta.len(),
-                        "[ai_os][stream] chunk delta"
-                    );
-                    full_text.push_str(&chunk.delta);
-                    sse_events.push(
-                        Event::default()
+        let mut full_text = String::new();
+        let mut input_tokens: u64 = 0;
+        let mut output_tokens: u64 = 0;
+        let mut cost_usd: f64 = 0.0;
+        let mut had_error: Option<String> = None;
+
+        while let Some(chunk_result) = chunk_stream.next().await {
+            match chunk_result {
+                Ok(chunk) => {
+                    if !chunk.delta.is_empty() {
+                        tracing::trace!(
+                            delta_len = chunk.delta.len(),
+                            "[ai_os][stream] chunk delta"
+                        );
+                        full_text.push_str(&chunk.delta);
+                        let event = Event::default()
                             .event("delta")
-                            .data(chunk.delta.clone()),
-                    );
+                            .data(chunk.delta.clone());
+                        if tx.send(Ok(event)).await.is_err() {
+                            // Client disconnected — stop streaming.
+                            tracing::debug!("[ai_os][stream] client disconnected mid-stream");
+                            return;
+                        }
+                    }
+                    if chunk.is_final {
+                        // token_count is an estimate from StreamChunk; real usage
+                        // accumulates here for the done payload.
+                        output_tokens = output_tokens.saturating_add(chunk.token_count as u64);
+                        tracing::debug!(
+                            total_chars = full_text.len(),
+                            "[ai_os][stream] received final chunk"
+                        );
+                    }
                 }
-                if chunk.is_final {
-                    tracing::debug!(
-                        total_chars = full_text.len(),
-                        "[ai_os][stream] received final chunk"
-                    );
+                Err(e) => {
+                    tracing::error!("[ai_os][stream] stream error: {e}");
+                    had_error = Some(e.to_string());
+                    break;
                 }
-            }
-            Err(e) => {
-                tracing::error!("[ai_os][stream] stream error: {e}");
-                had_error = Some(e.to_string());
-                break;
             }
         }
-    }
 
-    // ── persist assistant message ────────────────────────────────────────────
-    let usage = UsageInfo::default();
-    if had_error.is_none() && !full_text.is_empty() {
-        let assistant_msg = AiMessage {
-            id: Uuid::new_v4().to_string(),
-            conversation_id: conversation_id_for_save.clone(),
-            role: "assistant".into(),
-            content: full_text.clone(),
-            input_tokens: usage.input_tokens as i64,
-            output_tokens: usage.output_tokens as i64,
-            cost_usd: usage.charged_amount_usd,
-            created_at: now + 1,
+        // ── persist assistant message ────────────────────────────────────────
+        if had_error.is_none() && !full_text.is_empty() {
+            let ts = now_ms();
+            let assistant_msg = AiMessage {
+                id: Uuid::new_v4().to_string(),
+                conversation_id: conversation_id_for_save.clone(),
+                role: "assistant".into(),
+                content: full_text.clone(),
+                input_tokens: input_tokens as i64,
+                output_tokens: output_tokens as i64,
+                cost_usd,
+                // +1 ms to guarantee ordering after the user message.
+                created_at: ts + 1,
+            };
+            if let Err(e) = store::with_connection(&config, |conn| {
+                store::message_insert(conn, &assistant_msg)
+                    .map_err(|e| anyhow::anyhow!("message_insert (assistant): {e}"))?;
+                conn.execute(
+                    "UPDATE ai_os_conversations SET updated_at = ?1 WHERE id = ?2",
+                    rusqlite::params![ts + 1, conversation_id_for_save],
+                )
+                .map_err(|e| anyhow::anyhow!("update conversation updated_at: {e}"))?;
+                Ok(())
+            }) {
+                tracing::warn!("[ai_os][stream] failed to save assistant message: {e}");
+            }
+        }
+
+        // ── send terminal event ──────────────────────────────────────────────
+        let terminal = if let Some(err_msg) = had_error {
+            Ok(Event::default().event("error").data(err_msg))
+        } else {
+            let done_payload = json!({
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "cost_usd": cost_usd,
+            })
+            .to_string();
+            Ok(Event::default().event("done").data(done_payload))
         };
-        if let Err(e) = store::with_connection(&config, |conn| {
-            store::message_insert(conn, &assistant_msg)
-                .map_err(|e| anyhow::anyhow!("message_insert (assistant): {e}"))?;
-            conn.execute(
-                "UPDATE ai_os_conversations SET updated_at = ?1 WHERE id = ?2",
-                rusqlite::params![now + 1, conversation_id_for_save],
-            )
-            .map_err(|e| anyhow::anyhow!("update conversation updated_at: {e}"))?;
-            Ok(())
-        }) {
-            tracing::warn!("[ai_os][stream] failed to save assistant message: {e}");
-        }
-    }
 
-    // ── append final done/error event ────────────────────────────────────────
-    if let Some(err_msg) = had_error {
-        sse_events.push(Event::default().event("error").data(err_msg));
-    } else {
-        let done_payload = json!({
-            "input_tokens": usage.input_tokens,
-            "output_tokens": usage.output_tokens,
-            "cost_usd": usage.charged_amount_usd,
-        })
-        .to_string();
-        sse_events.push(Event::default().event("done").data(done_payload));
-    }
+        // Ignore send error here — if the client is gone we just drop the event.
+        let _ = tx.send(terminal).await;
 
-    tracing::debug!(
-        conversation_id = %req.conversation_id,
-        event_count = sse_events.len(),
-        "[ai_os][stream] stream_handler: emitting events"
-    );
+        tracing::debug!(
+            conversation_id = %req.conversation_id,
+            "[ai_os][stream] stream_handler: task complete"
+        );
+    });
 
-    let stream = futures_util::stream::iter(
-        sse_events
-            .into_iter()
-            .map(|e| Ok::<Event, std::convert::Infallible>(e)),
-    );
-
-    Sse::new(stream)
+    Sse::new(ReceiverStream::new(rx))
         .keep_alive(KeepAlive::new().interval(Duration::from_secs(10)))
         .into_response()
 }
