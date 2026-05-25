@@ -43,7 +43,19 @@ pub fn load_or_create_key() -> Result<EncryptionKey, String> {
                 .map_err(|e| format!("[ai_os] create key file: {e}"))?;
             f.write_all(&arr).map_err(|e| format!("[ai_os] write key: {e}"))?;
         }
-        #[cfg(not(unix))]
+        #[cfg(windows)]
+        {
+            use std::fs::OpenOptions;
+            use std::io::Write;
+            // create_new prevents overwriting; full ACL restriction requires Windows-specific APIs
+            let mut f = OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&path)
+                .map_err(|e| format!("[ai_os] create key file: {e}"))?;
+            f.write_all(&arr).map_err(|e| format!("[ai_os] write key: {e}"))?;
+        }
+        #[cfg(not(any(unix, windows)))]
         {
             std::fs::write(&path, &arr).map_err(|e| format!("[ai_os] write key: {e}"))?;
         }
